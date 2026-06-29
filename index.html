@@ -966,28 +966,21 @@
             const btn = $('driveLoadBtn');
             btn.innerText = "Loading…"; btn.disabled = true;
             try {
-                // Apps Script doPost with action=load_config — standard CORS fetch.
-                // If this fails due to CORS (local file), falls back to configFetchUrl direct read.
+                // Apps Script redirects POSTs — use configFetchUrl (direct Drive link) for Load
+                // and reserve the script URL only for Save (no-cors write).
                 let data = null;
-                try {
-                    const resp = await fetch(url, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ action: "load_config" })
-                    });
-                    data = await resp.json();
-                } catch(corsErr) {
-                    // CORS blocked — try reading directly from the Drive share URL instead
-                    if (configFetchUrl) {
-                        const fetchUrl = configFetchUrl.replace('/view?usp=sharing','').replace('/view','')
-                            .replace('drive.google.com/file/d/','drive.google.com/uc?export=download&id=')
-                            .replace(/\/d\/([^/]+).*/, '/uc?export=download&id=$1');
-                        const r2 = await fetch(fetchUrl);
-                        const cfg = await r2.json();
-                        data = { success: true, config: cfg };
-                    } else {
-                        throw new Error("CORS blocked and no Config Fetch URL set as fallback.");
-                    }
+                const fetchUrl = (configFetchUrl || $('adminConfigFetchUrlInput').value.trim());
+                if (fetchUrl) {
+                    // Convert Google Drive share link to direct download URL
+                    const directUrl = fetchUrl
+                        .replace(/\/file\/d\/([^/]+).*/, '/uc?export=download&id=$1')
+                        .replace('drive.google.com/open?id=', 'drive.google.com/uc?export=download&id=');
+                    const resp = await fetch(directUrl);
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                    const cfg = await resp.json();
+                    data = { success: true, config: cfg };
+                } else {
+                    throw new Error("No Config Fetch URL set. Paste your Drive share link into the Config JSON Fetch URL field.");
                 }
                 if (data.success && data.config) {
                     const config = data.config;
