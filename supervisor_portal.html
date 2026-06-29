@@ -1,0 +1,1571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supervisor Management Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Plus+Jakarta+Sans', 'Plus Jakarta Sans', sans-serif; background-color: #0f172a; }
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #1e293b; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        select, option { background-color: #1e293b !important; color: #f8fafc !important; }
+        select option:disabled { color: #64748b !important; }
+        .tab-btn { transition: all 0.15s; }
+        .tab-btn.active { background: #4f46e5; color: #fff; }
+        .tab-btn:not(.active) { color: #94a3b8; }
+        .tab-btn:not(.active):hover { color: #e2e8f0; }
+        .task-card { transition: border-color 0.15s; }
+        .task-card:hover { border-color: #4f46e5; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col text-slate-300 font-normal antialiased">
+
+    <!-- NO SEED DATA — config is loaded via Import JSON or fetched from config URL -->
+    <script id="portal-data" type="application/json">
+{
+  "baked": false,
+  "configId": "",
+  "portalTitle": "",
+  "globalFormUrl": "",
+  "configFetchUrl": "",
+  "sheetAppUrl": "",
+  "spreadsheetViewUrl": "",
+  "touristRoster": [],
+  "bneiMehagrimRoster": [],
+  "assignmentsCatalog": [],
+  "adminPin": "1234",
+  "compiledLinks": {},
+  "clientProfiles": {}
+}
+    </script>
+
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3" id="titleHeaderContainer">
+                <div class="bg-indigo-600 p-2 rounded-xl text-white text-sm">📁</div>
+                <h1 id="portalTitleHeader" class="font-extrabold text-base text-slate-100">Machal Supervisor Dashboard</h1>
+                <span id="syncStatusBadge" class="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-950 text-amber-400 border border-amber-900/40">● Local Mode</span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <!-- Drive sync group — primary -->
+                <div class="flex items-center space-x-1.5 bg-slate-800/60 border border-slate-700 rounded-lg px-2 py-1">
+                    <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider hidden md:inline">Drive</span>
+                    <button onclick="driveLoadConfig()" id="driveLoadBtn" class="bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] px-2.5 py-1 rounded transition cursor-pointer shadow-sm" title="Load config from Google Drive">↓ Load</button>
+                    <button onclick="driveSaveConfig()" id="driveSaveBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] px-2.5 py-1 rounded transition cursor-pointer shadow-sm" title="Save config to Google Drive">↑ Save</button>
+                </div>
+                <!-- Local fallback group — secondary -->
+                <div class="flex items-center space-x-1.5 bg-slate-800/30 border border-slate-800 rounded-lg px-2 py-1">
+                    <span class="text-[9px] font-bold text-slate-600 uppercase tracking-wider hidden md:inline">Local</span>
+                    <label class="bg-slate-800 hover:bg-slate-700 text-slate-500 hover:text-slate-300 font-bold text-[10px] px-2.5 py-1 rounded cursor-pointer transition" title="Import config from local file">
+                        ↓ Import
+                        <input type="file" id="import_config_picker" accept=".json" onchange="importConfigJSON(this)" class="hidden">
+                    </label>
+                    <button onclick="exportConfigJSON()" class="bg-slate-800 hover:bg-slate-700 text-slate-500 hover:text-slate-300 font-bold text-[10px] px-2.5 py-1 rounded transition cursor-pointer" title="Export config to local file">↑ Export</button>
+                </div>
+                <button onclick="exportBakedStudentPortal()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] px-2.5 py-1.5 rounded-lg transition cursor-pointer shadow-md">Export Student Portal ↗</button>
+                <label for="studentSelector" class="text-xs font-semibold text-slate-400 uppercase tracking-wider hidden md:inline">Student:</label>
+                <select id="studentSelector" onchange="switchStudent(this.value)" class="bg-slate-800 text-slate-100 border border-slate-700 text-xs font-semibold rounded-xl p-2 outline-none cursor-pointer focus:border-indigo-500"></select>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+        <!-- EMPTY STATE — shown when no config loaded -->
+        <div id="emptyStateNotice" class="hidden bg-slate-900 border border-dashed border-slate-700 rounded-2xl p-12 text-center space-y-4">
+            <div class="text-4xl">📋</div>
+            <h2 class="text-lg font-bold text-slate-200">No configuration loaded</h2>
+            <p class="text-sm text-slate-500 max-w-md mx-auto">Import your config JSON file to load your portal settings, roster, and task catalog.</p>
+            <label class="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm px-5 py-2.5 rounded-xl cursor-pointer transition shadow-md">
+                Import Config JSON 📥
+                <input type="file" accept=".json" onchange="importConfigJSON(this)" class="hidden">
+            </label>
+        </div>
+
+        <div id="mainContent" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+                <!-- LEFT: CHECKLIST ARCHITECTURE + GLOBAL SETTINGS -->
+                <div class="lg:col-span-6 space-y-4">
+
+                    <!-- Checklist Variable Architecture -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4 flex flex-col">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wide">Checklist Variable Architecture</h3>
+                            <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider italic">Use arrows to reorder</span>
+                        </div>
+
+                        <!-- Task list -->
+                        <div id="adminAssignmentsList" class="space-y-1.5 max-h-52 overflow-y-auto custom-scroll"></div>
+
+                        <!-- Type selector -->
+                        <div class="flex bg-slate-950 rounded-lg p-1 border border-slate-800 mt-1">
+                            <button type="button" id="typeTaskBtn" onclick="setItemTypeInput('task')" class="tab-btn active flex-1 text-center py-1.5 px-2 font-semibold rounded text-[11px] cursor-pointer">Requirement</button>
+                            <button type="button" id="typeHeaderBtn" onclick="setItemTypeInput('header')" class="tab-btn flex-1 text-center py-1.5 px-2 font-semibold rounded text-[11px] cursor-pointer">Instruction Separator</button>
+                        </div>
+
+                        <!-- Dynamic input fields -->
+                        <div id="itemInputsContainer" class="space-y-2"></div>
+                        <div id="insertActionButtonsContainer"></div>
+                    </div>
+
+                    <!-- Global Settings -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 flex flex-col font-sans">
+                        <div class="border-b border-slate-800 pb-2">
+                            <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wide">Global Settings</h3>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Process Title:</label>
+                                <input type="text" id="adminTitleInput" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-indigo-500 text-xs">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Google Form Upload Link:</label>
+                                <input type="text" id="adminFormUrlInput" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-indigo-500 text-xs font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Config JSON Fetch URL:</label>
+                                <input type="text" id="adminConfigFetchUrlInput" placeholder="Google Drive share link to config.json" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-indigo-500 text-xs font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Apps Script Sync Link:</label>
+                                <input type="text" id="adminSheetAppUrlInput" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-indigo-500 text-xs font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Google Sheet View Link:</label>
+                                <input type="text" id="adminSpreadsheetViewInput" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-indigo-500 text-xs font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Manager PIN:</label>
+                                <input type="text" id="adminPinInput" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 font-bold text-amber-400 tracking-wider outline-none focus:border-indigo-500 text-xs">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Tourists (comma-separated):</label>
+                                <textarea id="adminTouristsRosterInput" rows="2" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none custom-scroll text-xs"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Bnei Mehagrim (comma-separated):</label>
+                                <textarea id="adminBneiMehagrimRosterInput" rows="2" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none custom-scroll text-xs"></textarea>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 text-xs border-t border-slate-800 pt-3">
+                            <button id="saveGlobalConfigBtn" class="col-span-1 bg-orange-600 hover:bg-orange-500 text-white font-bold py-2 rounded-lg text-xs transition cursor-pointer">Apply Settings</button>
+                            <button id="resetStudentBtn" class="bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 border border-rose-900/40 font-bold py-2 rounded-lg transition cursor-pointer">Reset Student</button>
+                            <button id="globalWipeBtn" class="bg-rose-600 hover:bg-rose-500 text-white font-bold py-2 rounded-lg transition cursor-pointer">Wipe All</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RIGHT: PROCESS TRACKER + DOSSIER COMPILER -->
+                <div class="lg:col-span-6 space-y-4">
+
+                    <!-- Process Tracker (replaces Pending Review) -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 flex flex-col" style="height: 380px;">
+                        <div class="border-b border-slate-800 pb-2 flex items-center justify-between shrink-0">
+                            <div>
+                                <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wide">Process Tracker</h3>
+                                <p class="text-[10px] text-slate-500 mt-0.5">Review pending submissions or inspect focused student progress.</p>
+                            </div>
+                            <span id="reviewQueueSizeBadge" class="bg-amber-600/20 text-amber-400 text-[10px] px-2 py-0.5 rounded-full font-bold border border-amber-500/20">0 Pending</span>
+                        </div>
+                        <!-- Tabs -->
+                        <div class="flex bg-slate-950 rounded-lg p-0.5 border border-slate-800 text-[11px] shrink-0">
+                            <button id="tabGlobalBtn" onclick="switchTrackerTab('global')" class="tab-btn active flex-1 text-center py-1.5 px-2 font-semibold rounded cursor-pointer">Pending Approval</button>
+                            <button id="tabStudentBtn" onclick="switchTrackerTab('student')" class="tab-btn flex-1 text-center py-1.5 px-2 font-semibold rounded cursor-pointer">Student Progress Tracker</button>
+                        </div>
+                        <!-- Global pending tab -->
+                        <div id="tabGlobalContent" class="overflow-y-auto custom-scroll space-y-2 pr-1 flex-1"></div>
+                        <!-- Student status tab -->
+                        <div id="tabStudentContent" class="overflow-y-auto custom-scroll space-y-1 pr-1 flex-1 hidden"></div>
+                    </div>
+
+                    <!-- Google Sheet Sync -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center space-x-2.5 cursor-pointer select-none" id="spreadsheetSyncAreaHeader">
+                                <span id="syncToggleArrow" class="text-indigo-400 text-xs font-bold w-4 text-center">▶</span>
+                                <div class="text-left">
+                                    <h3 class="text-xs font-bold text-indigo-400 uppercase tracking-wide">Google Form Sheet Sync</h3>
+                                    <p class="text-[10px] text-slate-500 font-medium">Match Google Sheet columns to checklist tasks.</p>
+                                </div>
+                            </div>
+                            <button id="importSpreadsheetBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition shrink-0 cursor-pointer">Import Sheet Data</button>
+                        </div>
+                        <div id="spreadsheetSyncArea" class="hidden mt-3 pt-3 border-t border-slate-800/60 space-y-3 text-xs">
+                            <div id="columnMappingContainer" class="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-3">
+                                <div class="text-left border-b border-slate-800 pb-2">
+                                    <h4 class="text-[11px] font-bold text-emerald-400 uppercase tracking-wide">Align Spreadsheet Columns</h4>
+                                </div>
+                                <div id="mappingFieldsContainer" class="space-y-2 max-h-48 overflow-y-auto custom-scroll p-1"></div>
+                                <div id="rowValueMappingContainer" class="space-y-2 border-t border-slate-800/60 pt-3 mt-1 hidden max-h-56 overflow-y-auto custom-scroll pr-1"></div>
+                                <button id="applyMappingBtn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg text-xs transition cursor-pointer">Apply Mapping & Sync</button>
+                            </div>
+                            <div id="syncDiagnosticsConsole" class="p-2.5 bg-slate-950 text-slate-400 font-mono text-[10px] rounded-lg border border-slate-800 space-y-1 max-h-32 overflow-y-auto custom-scroll hidden"></div>
+                        </div>
+                    </div>
+
+                    <!-- Dossier Compiler — collapsible -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center space-x-2.5 cursor-pointer select-none" id="dossierCompilerHeader">
+                                <span id="dossierToggleArrow" class="text-emerald-400 text-xs font-bold w-4 text-center">&#9658;</span>
+                                <div>
+                                    <h3 class="text-xs font-bold text-emerald-400 uppercase tracking-wide">Dossier PDF Compiler</h3>
+                                    <p class="text-[10px] text-slate-500 font-medium">Compile and publish a final dossier link for the active student.</p>
+                                </div>
+                            </div>
+                            <button id="compileDeskPdfBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition cursor-pointer shrink-0">Compile PDF</button>
+                        </div>
+                        <div id="dossierCompilerArea" class="hidden mt-3 pt-3 border-t border-slate-800/60 space-y-3 text-xs">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Session files loaded:</label>
+                                    <div class="p-2 bg-slate-950 border border-slate-800 rounded-lg">
+                                        <span id="loadedFilesCounterDisplay" class="font-mono text-amber-400 text-[11px]">0 / 0 Loaded</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Published URL for <span id="targetLinkNameLabel" class="text-amber-400">&#8212;</span>:</label>
+                                    <div class="flex items-center space-x-1.5">
+                                        <input type="text" id="managerCompiledUrlInput" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none font-mono text-[11px]" placeholder="https://drive.google.com/...">
+                                        <button id="publishDossierLinkBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-3 rounded-lg transition text-[11px] cursor-pointer shrink-0">Publish</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="processingDeskSlotsContainer" class="space-y-1.5 max-h-40 overflow-y-auto custom-scroll pr-1"></div>
+                        </div>
+                    </div>
+
+                    <!-- Active Student Profile — condensed single column -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+                        <div class="border-b border-slate-800 pb-2 flex items-center space-x-2">
+                            <span class="bg-indigo-500/20 text-indigo-400 p-1.5 rounded-lg text-sm">&#128203;</span>
+                            <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wide">Active Student Profile</h3>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-2"><label class="text-[10px] font-bold text-slate-400 uppercase w-28 shrink-0">Hebrew Name</label><input type="text" id="profile_hebrewName" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-indigo-500 transition text-slate-200" placeholder="e.g. &#1488;&#1500;&#1499;&#1505; &#1502;&#1512;&#1505;&#1512;"></div>
+                            <div class="flex items-center gap-2"><label class="text-[10px] font-bold text-slate-400 uppercase w-28 shrink-0">WhatsApp</label><input type="tel" id="profile_whatsapp" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-indigo-500 transition text-slate-200" placeholder="+1 555-0199"></div>
+                            <div class="flex items-center gap-2"><label class="text-[10px] font-bold text-slate-400 uppercase w-28 shrink-0">Israeli Cell</label><input type="tel" id="profile_israeliCell" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-indigo-500 transition text-slate-200" placeholder="050-1234567"></div>
+                            <div class="flex items-center gap-2"><label class="text-[10px] font-bold text-slate-400 uppercase w-28 shrink-0">Email</label><input type="email" id="profile_email" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-indigo-500 transition text-slate-200" placeholder="alex@example.com"></div>
+                            <div class="flex items-center gap-2"><label class="text-[10px] font-bold text-slate-400 uppercase w-28 shrink-0">Passport</label><input type="text" id="profile_passport" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-indigo-500 transition text-slate-200" placeholder="A12345678"></div>
+                            <div class="flex items-center gap-2"><label class="text-[10px] font-bold text-slate-400 uppercase w-28 shrink-0">Machal ID</label><input type="text" id="profile_machalId" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-indigo-500 transition text-slate-200" placeholder="M-98765"></div>
+                        </div>
+                    </div>
+
+                    <!-- Complete Profiles Directory -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center space-x-2.5 cursor-pointer select-none" id="profilesDirectoryHeader">
+                                <span id="directoryToggleArrow" class="text-indigo-400 text-xs font-bold w-4 text-center">&#9658;</span>
+                                <h3 class="text-xs font-bold text-indigo-400 uppercase tracking-wide">Complete Profiles Directory</h3>
+                            </div>
+                            <button id="exportCsvBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition cursor-pointer shrink-0">Export CSV</button>
+                        </div>
+                        <div id="profilesDirectoryExpandableArea" class="hidden mt-3 pt-3 border-t border-slate-800/60 overflow-x-auto custom-scroll max-h-48">
+                            <table class="w-full text-left text-[11px] border-collapse">
+                                <thead>
+                                    <tr class="border-b border-slate-700 text-slate-400 uppercase font-semibold">
+                                        <th class="py-2 px-2">Name</th><th class="py-2 px-2">Hebrew Name</th><th class="py-2 px-2">WhatsApp</th><th class="py-2 px-2">Israeli Cell</th><th class="py-2 px-2">Email</th><th class="py-2 px-2">Passport</th><th class="py-2 px-2">Machal ID</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="managerProfilesDirectoryTableBody" class="divide-y divide-slate-800 text-slate-300"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MODALS -->
+    <div id="customConfirmModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 text-center space-y-4">
+            <h3 id="confirmTitle" class="text-lg font-bold text-white">Confirm Action</h3>
+            <p id="confirmMessage" class="text-xs text-slate-400 leading-relaxed"></p>
+            <div class="flex space-x-2 pt-2">
+                <button id="closeConfirmBtn" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold py-2.5 rounded-xl transition cursor-pointer">Cancel</button>
+                <button id="confirmActionButton" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold py-2.5 rounded-xl transition cursor-pointer">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="customAlertModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl max-w-sm w-full p-6 text-center space-y-3">
+            <div id="alertIconContainer" class="w-12 h-12 rounded-full flex items-center justify-center mx-auto text-indigo-400 bg-indigo-500/10"></div>
+            <h3 id="alertTitle" class="text-lg font-bold text-white">Notification</h3>
+            <p id="alertMessage" class="text-xs text-slate-400 leading-relaxed"></p>
+            <button id="closeAlertBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2.5 rounded-xl transition cursor-pointer">Done</button>
+        </div>
+    </div>
+
+    <div id="pinModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl max-w-sm w-full p-6 text-center space-y-3">
+            <div class="bg-amber-500/10 text-amber-400 w-12 h-12 rounded-full flex items-center justify-center mx-auto text-2xl">🔑</div>
+            <h3 class="text-lg font-bold text-white">Manager Access</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">Enter your supervisor PIN to access management controls.</p>
+            <input type="password" id="pinInput" class="w-full text-center bg-slate-950 border border-slate-800 rounded-xl p-3 text-lg font-bold tracking-widest outline-none text-white focus:border-indigo-500 transition" placeholder="••••" maxlength="8">
+            <p id="pinErrorText" class="text-xs text-rose-500 hidden font-semibold">Incorrect PIN.</p>
+            <div class="flex space-x-2 pt-1">
+                <button onclick="closePinModal()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold py-2.5 rounded-xl transition cursor-pointer">Cancel</button>
+                <button onclick="verifyTeacherPin()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2.5 rounded-xl transition cursor-pointer">Unlock</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="customPromptModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl max-w-sm w-full p-6 text-center space-y-3">
+            <h3 id="promptTitle" class="text-lg font-bold text-white">Revision Request</h3>
+            <p id="promptMessage" class="text-xs text-slate-400 leading-relaxed"></p>
+            <textarea id="promptInput" rows="3" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white text-xs outline-none focus:border-indigo-500 transition custom-scroll" placeholder="Type revision instructions..."></textarea>
+            <div class="flex space-x-2 pt-1">
+                <button onclick="closeCustomPrompt()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold py-2.5 rounded-xl transition cursor-pointer">Cancel</button>
+                <button onclick="submitCustomPrompt()" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold py-2.5 rounded-xl transition cursor-pointer">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-slate-900 border-t border-slate-800 py-4 text-center text-xs text-slate-600 mt-auto">
+        <p>Machal Onboarding Hub · Supervisor Portal</p>
+    </footer>
+
+    <script>
+        // ── State ──────────────────────────────────────────────────────────────
+        let portalTitle = "", globalFormUrl = "", configFetchUrl = "", sheetAppUrl = "", spreadsheetViewUrl = "";
+        let touristRoster = [], bneiMehagrimRoster = [], studentRoster = [], assignmentsCatalog = [];
+        let adminPin = "1234", compiledLinks = {}, clientProfiles = {};
+        let activeStudent = "", database = {}, localDeskFiles = {};
+        let currentInputType = "task", editingItemId = null;
+        let spreadsheetHeaders = [], spreadsheetData = [], columnMapping = {}, rowValueMapping = {};
+        let firebaseApp = null, db = null, auth = null, firestoreActive = false, activeConfirmCallback = null;
+        let activePromptCallback = null, activeTrackerTab = "global";
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // ── Helpers ────────────────────────────────────────────────────────────
+        const $ = id => document.getElementById(id);
+        function setVal(id, val) { const el = $(id); if (el) el.value = val; }
+        function safeOn(id, ev, fn) { const el = $(id); if (el) el.addEventListener(ev, fn); }
+        function cleanStr(s) { return s ? s.toString().toLowerCase().replace(/[^\w\u0590-\u05fe]/g,'').trim() : ""; }
+
+        function showCustomAlert(title, message, type='info') {
+            $('alertTitle').innerText = title; $('alertMessage').innerText = message;
+            const icon = $('alertIconContainer');
+            if (type === 'success') {
+                icon.className = "w-12 h-12 rounded-full flex items-center justify-center mx-auto bg-emerald-500/20 text-emerald-400";
+                icon.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`;
+            } else {
+                icon.className = "w-12 h-12 rounded-full flex items-center justify-center mx-auto bg-indigo-500/20 text-indigo-400";
+                icon.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`;
+            }
+            $('customAlertModal').classList.remove('hidden');
+        }
+        function closeCustomAlert() { $('customAlertModal').classList.add('hidden'); }
+        function closeCustomConfirm() { $('customConfirmModal').classList.add('hidden'); }
+        function showCustomConfirm(title, msg, cb) {
+            $('confirmTitle').innerText = title; $('confirmMessage').innerText = msg;
+            activeConfirmCallback = cb; $('customConfirmModal').classList.remove('hidden');
+        }
+        function executeConfirmedAction() { if (typeof activeConfirmCallback === 'function') activeConfirmCallback(); closeCustomConfirm(); }
+        function showCustomPrompt(title, msg, cb) {
+            $('promptTitle').innerText = title; $('promptMessage').innerText = msg;
+            $('promptInput').value = ''; activePromptCallback = cb; $('customPromptModal').classList.remove('hidden');
+        }
+        function closeCustomPrompt() { $('customPromptModal').classList.add('hidden'); }
+        function submitCustomPrompt() { const val = $('promptInput').value.trim(); if (activePromptCallback) activePromptCallback(val); closeCustomPrompt(); }
+
+        function toggleElementCollapse(areaId, arrowId) {
+            const area = $(areaId), arrow = $(arrowId);
+            if (!area || !arrow) return;
+            const hidden = area.classList.toggle('hidden');
+            arrow.innerText = hidden ? '▶' : '▼';
+        }
+
+        // ── Config load / save ─────────────────────────────────────────────────
+        function loadInitialConfiguration() {
+            try {
+                const seed = JSON.parse($('portal-data').innerText);
+                portalTitle           = localStorage.getItem('local_portalTitle')           || seed.portalTitle           || "";
+                globalFormUrl         = localStorage.getItem('local_globalFormUrl')         || seed.globalFormUrl         || "";
+                configFetchUrl        = localStorage.getItem('local_configFetchUrl')        || seed.configFetchUrl        || "";
+                sheetAppUrl           = localStorage.getItem('local_sheetAppUrl')           || seed.sheetAppUrl           || "";
+                spreadsheetViewUrl    = localStorage.getItem('local_spreadsheetViewUrl')    || seed.spreadsheetViewUrl    || "";
+                adminPin              = localStorage.getItem('local_adminPin')              || seed.adminPin              || "1234";
+                touristRoster         = JSON.parse(localStorage.getItem('local_touristRoster')      || 'null') || seed.touristRoster      || [];
+                bneiMehagrimRoster    = JSON.parse(localStorage.getItem('local_bneiMehagrimRoster') || 'null') || seed.bneiMehagrimRoster || [];
+                assignmentsCatalog    = JSON.parse(localStorage.getItem('local_assignmentsCatalog') || 'null') || seed.assignmentsCatalog || [];
+                compiledLinks         = JSON.parse(localStorage.getItem('local_compiledLinks')       || 'null') || seed.compiledLinks       || {};
+                clientProfiles        = JSON.parse(localStorage.getItem('local_clientProfiles')      || 'null') || seed.clientProfiles      || {};
+                const localDB         = localStorage.getItem('local_machal_checklist_db');
+                database              = localDB ? JSON.parse(localDB) : {};
+                studentRoster         = [...touristRoster, ...bneiMehagrimRoster];
+                if (studentRoster.length > 0) reconcileChecklistDatabase();
+            } catch(e) { console.error("Config load error:", e); }
+        }
+
+        function buildCleanChecklistDatabase() {
+            database = {};
+            studentRoster.forEach(name => {
+                database[name] = {};
+                assignmentsCatalog.forEach(t => { if (t.type !== 'header') database[name][t.id] = emptyRecord(); });
+            });
+            saveToLocalStorage();
+        }
+
+        function reconcileChecklistDatabase() {
+            studentRoster.forEach(name => {
+                if (!database[name]) database[name] = {};
+                if (!clientProfiles[name]) clientProfiles[name] = emptyProfile();
+                assignmentsCatalog.forEach(t => { if (t.type !== 'header' && !database[name][t.id]) database[name][t.id] = emptyRecord(); });
+            });
+            saveToLocalStorage();
+        }
+
+        function emptyRecord() { return { downloaded: false, submitted: false, verified: false, submissionUrl: "", feedbackNote: "" }; }
+        function emptyProfile() { return { hebrewName: "", whatsapp: "", israeliCell: "", email: "", passport: "", machalId: "" }; }
+
+        function saveAllConfigsToLocalStorage() {
+            localStorage.setItem('local_portalTitle',          portalTitle);
+            localStorage.setItem('local_globalFormUrl',        globalFormUrl);
+            localStorage.setItem('local_configFetchUrl',       configFetchUrl);
+            localStorage.setItem('local_sheetAppUrl',          sheetAppUrl);
+            localStorage.setItem('local_spreadsheetViewUrl',   spreadsheetViewUrl);
+            localStorage.setItem('local_adminPin',             adminPin);
+            localStorage.setItem('local_touristRoster',        JSON.stringify(touristRoster));
+            localStorage.setItem('local_bneiMehagrimRoster',   JSON.stringify(bneiMehagrimRoster));
+            localStorage.setItem('local_assignmentsCatalog',   JSON.stringify(assignmentsCatalog));
+            localStorage.setItem('local_compiledLinks',        JSON.stringify(compiledLinks));
+            localStorage.setItem('local_clientProfiles',       JSON.stringify(clientProfiles));
+        }
+
+        function saveToLocalStorage() {
+            localStorage.setItem('local_machal_checklist_db', JSON.stringify(database));
+            saveAllConfigsToLocalStorage();
+        }
+
+        // ── App init ───────────────────────────────────────────────────────────
+        function initializeApplication() {
+            const hasConfig = studentRoster.length > 0 || assignmentsCatalog.length > 0 || portalTitle;
+            $('emptyStateNotice').classList.toggle('hidden', hasConfig);
+            $('mainContent').classList.toggle('hidden', !hasConfig);
+            if (!hasConfig) return;
+
+            const hdr = $('portalTitleHeader');
+            if (hdr) hdr.innerText = (portalTitle || "Machal Supervisor Dashboard");
+
+            const selector = $('studentSelector');
+            if (selector) {
+                selector.innerHTML = '';
+                studentRoster.forEach(name => {
+                    const opt = document.createElement('option'); opt.value = name; opt.innerText = name;
+                    selector.appendChild(opt);
+                });
+                if (activeStudent && studentRoster.includes(activeStudent)) selector.value = activeStudent;
+                else if (studentRoster.length > 0) { activeStudent = studentRoster[0]; selector.value = activeStudent; }
+            }
+
+            setVal('adminTitleInput',           portalTitle);
+            setVal('adminFormUrlInput',          globalFormUrl);
+            setVal('adminConfigFetchUrlInput',   configFetchUrl);
+            setVal('adminSheetAppUrlInput',       sheetAppUrl);
+            setVal('adminSpreadsheetViewInput',   spreadsheetViewUrl);
+            setVal('adminPinInput',              adminPin);
+            setVal('adminTouristsRosterInput',    touristRoster.join(', '));
+            setVal('adminBneiMehagrimRosterInput', bneiMehagrimRoster.join(', '));
+
+            setItemTypeInput('task');
+            renderAdminAssignmentsList();
+            initializeMergeDeskQueueWorkspace();
+            renderActiveClientProfileFields();
+            renderManagerProfilesDirectory();
+            renderProcessTracker();
+        }
+
+        function switchStudent(name) {
+            activeStudent = name;
+            initializeMergeDeskQueueWorkspace();
+            renderActiveClientProfileFields();
+            renderProcessTracker();
+        }
+
+        // ── Checklist architecture render ──────────────────────────────────────
+        function renderAdminAssignmentsList() {
+            const container = $('adminAssignmentsList');
+            if (!container) return;
+            container.innerHTML = '';
+            if (assignmentsCatalog.length === 0) {
+                container.innerHTML = `<div class="p-4 text-slate-500 italic text-center text-xs">No items yet. Add one below.</div>`;
+                return;
+            }
+            assignmentsCatalog.forEach((item, idx) => {
+                const isHeader = item.type === 'header';
+                const trackTag = item.appliesToTourists && item.appliesToBneiMehagrim ? '' :
+                    item.appliesToTourists ? ' <span class="text-indigo-400 font-bold text-[9px]">[Tourist]</span>' :
+                    ' <span class="text-purple-400 font-bold text-[9px]">[Bnei Mehagrim]</span>';
+
+                const div = document.createElement('div');
+                div.className = `task-card p-2.5 border rounded-lg text-xs text-left flex items-start justify-between gap-2 ${isHeader ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-950 border-slate-800'}`;
+                div.innerHTML = `
+                    <div class="flex-1 min-w-0">
+                        <div class="font-bold text-slate-200 leading-tight truncate">${item.name}${trackTag}</div>
+                        ${item.description ? `<div class="text-slate-500 text-[10px] mt-0.5 italic leading-tight truncate">${item.description}</div>` : ''}
+                        ${item.instructions ? `<div class="text-slate-500 text-[10px] mt-0.5 italic leading-tight truncate">${item.instructions}</div>` : ''}
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button onclick="moveCatalogItemIndex(${idx},'up')" class="text-slate-400 hover:text-white px-1 py-0.5 rounded hover:bg-slate-700 transition cursor-pointer text-[11px]" title="Move up">▲</button>
+                        <button onclick="moveCatalogItemIndex(${idx},'down')" class="text-slate-400 hover:text-white px-1 py-0.5 rounded hover:bg-slate-700 transition cursor-pointer text-[11px]" title="Move down">▼</button>
+                        <button onclick="startEditingCatalogItem(${idx})" class="text-amber-400 hover:text-amber-300 px-1 py-0.5 rounded hover:bg-slate-700 transition cursor-pointer" title="Edit">✏️</button>
+                        <button onclick="removeCatalogItemFromIndex(${idx})" class="text-rose-400 hover:text-rose-300 px-1 py-0.5 rounded hover:bg-slate-700 transition cursor-pointer" title="Delete">🗑️</button>
+                    </div>`;
+                container.appendChild(div);
+            });
+        }
+
+        function setItemTypeInput(type) {
+            currentInputType = type;
+            const container = $('itemInputsContainer');
+            if (!container) return;
+            const taskBtn = $('typeTaskBtn'), headerBtn = $('typeHeaderBtn');
+            if (type === 'task') {
+                if (taskBtn) taskBtn.classList.add('active'); if (headerBtn) headerBtn.classList.remove('active');
+                container.innerHTML = `
+                    <div class="space-y-2 text-left">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Requirement Name</label>
+                                <input type="text" id="newAssignmentTitle" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-indigo-500 text-xs" placeholder="e.g. Passport Copy">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Form URL (Optional)</label>
+                                <input type="text" id="newAssignmentFileUrl" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-indigo-500 text-xs font-mono" placeholder="https://...">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Button Label Text (e.g. Get Form, View Example)</label>
+                                <input type="text" id="newAssignmentBtnText" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-indigo-500 text-xs" placeholder="e.g. Download Template">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Custom Smart Line Description (Optional)</label>
+                                <input type="text" id="newAssignmentDescription" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-indigo-500 text-xs" placeholder="e.g. Clear color scan of photo page.">
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-4 bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-[11px] text-slate-300">
+                            <span class="font-bold text-slate-400 uppercase text-[9px] tracking-wider">Target Tracks:</span>
+                            <label class="flex items-center space-x-1.5 cursor-pointer"><input type="checkbox" id="applyTouristCheck" class="rounded" checked><span>Tourists</span></label>
+                            <label class="flex items-center space-x-1.5 cursor-pointer"><input type="checkbox" id="applyBneiCheck" class="rounded" checked><span>Bnei Mehagrim</span></label>
+                            <label class="flex items-center space-x-1.5 cursor-pointer border-l border-slate-700 pl-4"><input type="checkbox" id="noUploadCheck" class="rounded"><span>Information / Download Only (No Upload)</span></label>
+                        </div>
+                    </div>`;
+            } else {
+                if (headerBtn) headerBtn.classList.add('active'); if (taskBtn) taskBtn.classList.remove('active');
+                container.innerHTML = `
+                    <div class="space-y-2 text-left">
+                        <div>
+                            <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Headline Text</label>
+                            <input type="text" id="newHeaderTitle" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-indigo-500 text-xs font-bold" placeholder="e.g. Phase 1: Onboarding Forms (Deadline: July 15)">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Instructions / Subtext (Optional)</label>
+                            <input type="text" id="newHeaderInstructions" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white outline-none focus:border-indigo-500 text-xs" placeholder="e.g. Please complete and upload before July 15.">
+                        </div>
+                    </div>`;
+            }
+            updateFormActionButtons();
+        }
+
+        function updateFormActionButtons() {
+            const container = $('insertActionButtonsContainer');
+            if (!container) return;
+            if (editingItemId) {
+                container.innerHTML = `
+                    <div class="flex space-x-2">
+                        <button onclick="addNewCatalogItem()" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 rounded-lg text-xs cursor-pointer">Update Item</button>
+                        <button onclick="cancelEditingCatalogItem()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2 px-4 rounded-lg border border-slate-700 text-xs cursor-pointer">Cancel</button>
+                    </div>`;
+            } else {
+                container.innerHTML = `<button onclick="addNewCatalogItem()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg text-xs cursor-pointer">Insert Task Node</button>`;
+            }
+        }
+
+        function addNewCatalogItem() {
+            if (editingItemId) {
+                const item = assignmentsCatalog.find(t => t.id === editingItemId);
+                if (!item) return;
+                if (item.type === 'task') {
+                    const name = $('newAssignmentTitle').value.trim();
+                    if (!name) { showCustomAlert("Required", "Please enter a task name."); return; }
+                    item.name = name; item.fileUrl = $('newAssignmentFileUrl').value.trim();
+                    item.btnText = $('newAssignmentBtnText').value.trim(); item.description = $('newAssignmentDescription').value.trim();
+                    item.appliesToTourists = $('applyTouristCheck').checked; item.appliesToBneiMehagrim = $('applyBneiCheck').checked;
+                    item.noUpload = $('noUploadCheck').checked;
+                } else {
+                    const name = $('newHeaderTitle').value.trim();
+                    if (!name) { showCustomAlert("Required", "Please enter a headline."); return; }
+                    item.name = name; item.instructions = $('newHeaderInstructions').value.trim();
+                }
+                editingItemId = null;
+                showCustomAlert("Updated", "Item updated successfully.", "success");
+            } else {
+                const id = 'var_' + Date.now();
+                if (currentInputType === 'task') {
+                    const name = $('newAssignmentTitle').value.trim();
+                    if (!name) { showCustomAlert("Required", "Please enter a task name."); return; }
+                    assignmentsCatalog.push({ id, type: "task", name, fileUrl: $('newAssignmentFileUrl').value.trim(), btnText: $('newAssignmentBtnText').value.trim(), description: $('newAssignmentDescription').value.trim(), appliesToTourists: $('applyTouristCheck').checked, appliesToBneiMehagrim: $('applyBneiCheck').checked, noUpload: $('noUploadCheck').checked });
+                    studentRoster.forEach(n => { if (!database[n]) database[n] = {}; database[n][id] = emptyRecord(); });
+                } else {
+                    const name = $('newHeaderTitle').value.trim();
+                    if (!name) { showCustomAlert("Required", "Please enter a headline."); return; }
+                    assignmentsCatalog.push({ id, type: "header", name, instructions: $('newHeaderInstructions').value.trim(), appliesToTourists: true, appliesToBneiMehagrim: true });
+                }
+                showCustomAlert("Created", "New item added to catalog.", "success");
+            }
+            saveCatalogToCloud();
+        }
+
+        function startEditingCatalogItem(idx) {
+            const item = assignmentsCatalog[idx]; if (!item) return;
+            editingItemId = item.id; setItemTypeInput(item.type);
+            if (item.type === 'task') {
+                setVal('newAssignmentTitle', item.name || ""); setVal('newAssignmentFileUrl', item.fileUrl || "");
+                setVal('newAssignmentBtnText', item.btnText || ""); setVal('newAssignmentDescription', item.description || "");
+                $('applyTouristCheck').checked = item.appliesToTourists !== false;
+                $('applyBneiCheck').checked = item.appliesToBneiMehagrim !== false;
+                $('noUploadCheck').checked = item.noUpload === true;
+            } else {
+                setVal('newHeaderTitle', item.name || ""); setVal('newHeaderInstructions', item.instructions || "");
+            }
+            updateFormActionButtons();
+        }
+
+        function cancelEditingCatalogItem() { editingItemId = null; setItemTypeInput(currentInputType); }
+
+        function removeCatalogItemFromIndex(idx) {
+            const item = assignmentsCatalog[idx];
+            assignmentsCatalog.splice(idx, 1);
+            if (item.type !== 'header') studentRoster.forEach(n => { if (database[n]) delete database[n][item.id]; });
+            saveCatalogToCloud();
+        }
+
+        function moveCatalogItemIndex(idx, dir) {
+            if (dir === 'up' && idx > 0) { [assignmentsCatalog[idx], assignmentsCatalog[idx-1]] = [assignmentsCatalog[idx-1], assignmentsCatalog[idx]]; }
+            else if (dir === 'down' && idx < assignmentsCatalog.length - 1) { [assignmentsCatalog[idx], assignmentsCatalog[idx+1]] = [assignmentsCatalog[idx+1], assignmentsCatalog[idx]]; }
+            saveCatalogToCloud();
+        }
+
+        // ── Process Tracker (2 tabs) ───────────────────────────────────────────
+        function switchTrackerTab(tab) {
+            activeTrackerTab = tab;
+            $('tabGlobalBtn').classList.toggle('active', tab === 'global');
+            $('tabStudentBtn').classList.toggle('active', tab === 'student');
+            $('tabGlobalContent').classList.toggle('hidden', tab !== 'global');
+            $('tabStudentContent').classList.toggle('hidden', tab !== 'student');
+        }
+
+        function renderProcessTracker() {
+            renderGlobalPendingQueue();
+            renderStudentStatusTab();
+        }
+
+        function renderGlobalPendingQueue() {
+            const container = $('tabGlobalContent'), badge = $('reviewQueueSizeBadge');
+            if (!container) return;
+            container.innerHTML = '';
+
+            // Only tasks: submitted=true AND verified=false (awaiting approval)
+            const pending = [];
+            studentRoster.forEach(student => {
+                assignmentsCatalog.forEach(task => {
+                    if (task.type === 'header' || task.noUpload) return;
+                    const rec = database[student]?.[task.id];
+                    if (rec && rec.submitted && !rec.verified) {
+                        pending.push({ student, taskId: task.id, taskName: task.name, submissionUrl: rec.submissionUrl || "" });
+                    }
+                });
+            });
+
+            if (badge) badge.innerText = `${pending.length} Pending`;
+
+            if (pending.length === 0) {
+                container.innerHTML = `<div class="text-center py-8 text-slate-500 italic text-[11px]">No submissions awaiting approval.</div>`;
+                return;
+            }
+
+            pending.forEach(item => {
+                const card = document.createElement('div');
+                card.className = "p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-left text-[11px] space-y-2";
+                const hasLink = item.submissionUrl && item.submissionUrl.startsWith('http');
+                const sheetLink = spreadsheetViewUrl && spreadsheetViewUrl.startsWith('http') ? spreadsheetViewUrl : '';
+                const linkEl = hasLink
+                    ? `<a href="${item.submissionUrl}" target="_blank" class="bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 font-bold px-2 py-1 rounded border border-indigo-500/20 text-[9px] uppercase shrink-0">Open ↗</a>`
+                    : sheetLink
+                        ? `<a href="${sheetLink}" target="_blank" class="bg-amber-600/20 text-amber-400 font-bold px-2 py-1 rounded border border-amber-500/20 text-[9px] uppercase shrink-0">Sheet ↗</a>`
+                        : `<span class="text-[9px] text-slate-500 italic shrink-0">Google Form</span>`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-start gap-2">
+                        <div class="min-w-0 flex-1">
+                            <div class="font-extrabold text-slate-200 truncate">${item.student}</div>
+                            <div class="text-slate-400 text-[10px] truncate">${item.taskName}</div>
+                        </div>
+                        ${linkEl}
+                    </div>
+                    <div class="flex items-center space-x-2 border-t border-slate-800/60 pt-2">
+                        <button onclick="approveQueueItem('${item.student}','${item.taskId}')" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black py-1.5 px-2 rounded text-[10px] transition cursor-pointer">Approve</button>
+                        <button onclick="promptQueueRevision('${item.student}','${item.taskId}')" class="flex-1 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 font-black py-1.5 px-2 rounded text-[10px] border border-rose-500/20 transition cursor-pointer">Request Revision</button>
+                    </div>`;
+                container.appendChild(card);
+            });
+        }
+
+        function renderStudentStatusTab() {
+            const container = $('tabStudentContent');
+            if (!container || !activeStudent) { if (container) container.innerHTML = `<div class="text-center py-8 text-slate-500 italic text-[11px]">Select a student above.</div>`; return; }
+            container.innerHTML = `<div class="text-[10px] text-slate-500 uppercase font-bold tracking-wider pb-1 border-b border-slate-800 mb-2">${activeStudent}</div>`;
+
+            assignmentsCatalog.forEach(task => {
+                if (!itemAppliesToActiveStudent(task)) return;
+                if (task.type === 'header') {
+                    const hdr = document.createElement('div');
+                    hdr.className = "text-[10px] font-bold text-slate-400 uppercase tracking-wide pt-2 pb-1 border-b border-slate-800/60";
+                    hdr.innerText = task.name;
+                    container.appendChild(hdr); return;
+                }
+                const rec = database[activeStudent]?.[task.id] || emptyRecord();
+                const isVerified = rec.verified, isSubmitted = rec.submitted && !rec.verified, isDownloaded = rec.downloaded && !rec.submitted;
+                const badge = isVerified
+                    ? `<span class="px-2 py-0.5 text-[9px] font-bold bg-emerald-900/50 text-emerald-400 rounded-full border border-emerald-800">Complete</span>`
+                    : isSubmitted
+                        ? `<span class="px-2 py-0.5 text-[9px] font-bold bg-amber-900/50 text-amber-400 rounded-full border border-amber-800 animate-pulse">Pending Review</span>`
+                        : isDownloaded
+                            ? `<span class="px-2 py-0.5 text-[9px] font-bold bg-blue-900/50 text-blue-400 rounded-full border border-blue-800">In Progress</span>`
+                            : `<span class="px-2 py-0.5 text-[9px] font-bold bg-slate-800 text-slate-500 rounded-full border border-slate-700">Not Started</span>`;
+                const row = document.createElement('div');
+                row.className = "flex items-center justify-between py-1.5 border-b border-slate-800/40 gap-2";
+                row.innerHTML = `<span class="text-xs text-slate-300 truncate flex-1">${task.name}</span>${badge}`;
+                container.appendChild(row);
+            });
+        }
+
+        function approveQueueItem(student, taskId) {
+            if (!database[student]?.[taskId]) return;
+            database[student][taskId].verified = true; database[student][taskId].feedbackNote = "";
+            saveStudentChecklistToCloud(student);
+            showCustomAlert("Approved", `Verified ${student}'s submission.`, "success");
+        }
+
+        function promptQueueRevision(student, taskId) {
+            showCustomPrompt("Request Revision", `Enter revision instructions for ${student}:`, (note) => {
+                if (!note) { showCustomAlert("Required", "Please enter revision instructions."); return; }
+                if (!database[student]?.[taskId]) return;
+                database[student][taskId].submitted = false; database[student][taskId].verified = false;
+                database[student][taskId].feedbackNote = note;
+                saveStudentChecklistToCloud(student);
+                showCustomAlert("Revision Sent", "Status reverted with revision note.", "info");
+            });
+        }
+
+        // ── Profiles ───────────────────────────────────────────────────────────
+        function renderActiveClientProfileFields() {
+            if (!activeStudent) return;
+            if (!clientProfiles[activeStudent]) clientProfiles[activeStudent] = emptyProfile();
+            const p = clientProfiles[activeStudent];
+            setVal('profile_hebrewName', p.hebrewName || ""); setVal('profile_whatsapp', p.whatsapp || "");
+            setVal('profile_israeliCell', p.israeliCell || ""); setVal('profile_email', p.email || "");
+            setVal('profile_passport', p.passport || ""); setVal('profile_machalId', p.machalId || "");
+        }
+
+        function saveActiveProfileField(field, value) {
+            if (!activeStudent) return;
+            if (!clientProfiles[activeStudent]) clientProfiles[activeStudent] = emptyProfile();
+            clientProfiles[activeStudent][field] = value;
+            saveStudentProfileToCloud(activeStudent);
+        }
+
+        function renderManagerProfilesDirectory() {
+            const tbody = $('managerProfilesDirectoryTableBody'); if (!tbody) return; tbody.innerHTML = '';
+            studentRoster.forEach(name => {
+                const p = clientProfiles[name] || emptyProfile();
+                const row = document.createElement('tr'); row.className = "hover:bg-slate-800/40 border-b border-slate-800/50";
+                row.innerHTML = `<td class="py-2 px-3 font-semibold text-slate-100">${name}</td><td class="py-2 px-3">${p.hebrewName||'-'}</td><td class="py-2 px-3">${p.whatsapp||'-'}</td><td class="py-2 px-3">${p.israeliCell||'-'}</td><td class="py-2 px-3">${p.email||'-'}</td><td class="py-2 px-3">${p.passport||'-'}</td><td class="py-2 px-3">${p.machalId||'-'}</td>`;
+                tbody.appendChild(row);
+            });
+        }
+
+        function exportProfilesToCSV() {
+            let csv = 'Client Name,Hebrew Name,WhatsApp,Israeli Cell,Email,Passport,Machal ID\n';
+            studentRoster.forEach(name => {
+                const p = clientProfiles[name] || emptyProfile();
+                csv += `"${name}","${p.hebrewName||''}","${p.whatsapp||''}","${p.israeliCell||''}","${p.email||''}","${p.passport||''}","${p.machalId||''}"\n`;
+            });
+            const blob = new Blob([new Uint8Array([0xEF,0xBB,0xBF]), csv], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = 'machal_profiles.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+
+        // ── Dossier desk ───────────────────────────────────────────────────────
+        function initializeMergeDeskQueueWorkspace() {
+            const label = $('targetLinkNameLabel'); if (label) label.innerText = activeStudent || "—";
+            const input = $('managerCompiledUrlInput'); if (input) input.value = compiledLinks[activeStudent] || "";
+            localDeskFiles = {}; renderMergeDeskRequirementSlots();
+        }
+
+        function renderMergeDeskRequirementSlots() {
+            const container = $('processingDeskSlotsContainer'); if (!container) return; container.innerHTML = '';
+            assignmentsCatalog.forEach(task => {
+                if (task.type === 'header' || task.noUpload || !itemAppliesToActiveStudent(task)) return;
+                const loaded = !!localDeskFiles[task.id];
+                const row = document.createElement('div');
+                row.className = `p-1.5 rounded border flex justify-between items-center text-[10px] ${loaded ? 'bg-emerald-950/20 border-emerald-900/40 text-emerald-200' : 'bg-slate-950/20 border-slate-800 text-slate-500'}`;
+                row.innerHTML = `<span class="truncate max-w-[60%] font-bold text-slate-300">${task.name}</span>
+                    <div class="flex items-center space-x-1.5">
+                        <label class="bg-slate-800 text-slate-300 px-2 py-0.5 rounded cursor-pointer border border-slate-700 hover:bg-slate-700 transition">
+                            Upload<input type="file" accept=".pdf,.jpg,.png" onchange="processFileToMergeDeskBuffer(this,'${task.id}')" class="hidden">
+                        </label>
+                        ${loaded ? `<button onclick="clearMergeDeskBufferSlot('${task.id}')" class="text-rose-400 font-bold cursor-pointer">✕</button>` : ''}
+                    </div>`;
+                container.appendChild(row);
+            });
+            updateMergeDeskFileCountDisplay();
+        }
+
+        function clearMergeDeskBufferSlot(id) { delete localDeskFiles[id]; renderMergeDeskRequirementSlots(); }
+        function processFileToMergeDeskBuffer(input, id) {
+            const file = input.files[0]; if (!file) return;
+            const r = new FileReader();
+            r.onload = e => { localDeskFiles[id] = { bytes: new Uint8Array(e.target.result), type: file.name.endsWith('.pdf') ? 'pdf' : 'image', name: file.name }; renderMergeDeskRequirementSlots(); };
+            r.readAsArrayBuffer(file);
+        }
+        function updateMergeDeskFileCountDisplay() {
+            const active = assignmentsCatalog.filter(t => t.type !== 'header' && !t.noUpload && itemAppliesToActiveStudent(t));
+            const el = $('loadedFilesCounterDisplay'); if (el) el.innerText = `${Object.keys(localDeskFiles).length} / ${active.length} Loaded`;
+        }
+
+        async function executeProcessingDeskMerge() {
+            try {
+                const master = await PDFLib.PDFDocument.create(); let count = 0;
+                for (const task of assignmentsCatalog) {
+                    if (task.type === 'header' || task.noUpload || !itemAppliesToActiveStudent(task)) continue;
+                    const file = localDeskFiles[task.id]; if (!file) continue;
+                    if (file.type === 'pdf') {
+                        const sub = await PDFLib.PDFDocument.load(file.bytes);
+                        const pages = await master.copyPages(sub, sub.getPageIndices()); pages.forEach(p => { master.addPage(p); count++; });
+                    } else {
+                        const img = file.name.toLowerCase().endsWith('.png') ? await master.embedPng(file.bytes) : await master.embedJpg(file.bytes);
+                        const pg = master.addPage([595.28, 841.89]); const { width, height } = img.scale(1);
+                        const f = Math.min(555.28/width, 801.89/height, 1);
+                        pg.drawImage(img, { x: (595.28-width*f)/2, y: (841.89-height*f)/2, width: width*f, height: height*f }); count++;
+                    }
+                }
+                if (count === 0) { showCustomAlert("No Files", "No files loaded to compile."); return; }
+                const bytes = await master.save();
+                const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+                a.download = `${activeStudent.toLowerCase().replace(/[^a-z0-9]/g,'_')}_dossier.pdf`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            } catch(err) { showCustomAlert("Merge Error", err.message); }
+        }
+
+        function saveCompiledUrlToActiveTarget() {
+            const link = $('managerCompiledUrlInput').value.trim(); if (!activeStudent) return;
+            compiledLinks[activeStudent] = link; saveCompiledLinksToCloud();
+            showCustomAlert("Published", "Dossier link saved for " + activeStudent + ".", "success");
+        }
+
+        // ── Settings save ──────────────────────────────────────────────────────
+        function commitStructuralConfigurationChanges() {
+            portalTitle         = $('adminTitleInput').value.trim();
+            globalFormUrl       = $('adminFormUrlInput').value.trim();
+            configFetchUrl      = $('adminConfigFetchUrlInput').value.trim();
+            sheetAppUrl         = $('adminSheetAppUrlInput').value.trim();
+            spreadsheetViewUrl  = $('adminSpreadsheetViewInput').value.trim();
+            adminPin            = $('adminPinInput').value.trim() || "1234";
+            touristRoster       = $('adminTouristsRosterInput').value.split(',').map(n=>n.trim()).filter(n=>n);
+            bneiMehagrimRoster  = $('adminBneiMehagrimRosterInput').value.split(',').map(n=>n.trim()).filter(n=>n);
+            studentRoster       = [...touristRoster, ...bneiMehagrimRoster];
+            reconcileChecklistDatabase(); initializeApplication(); saveSettingsToCloud();
+            showCustomAlert("Saved", "Settings updated.", "success");
+        }
+
+        // ── Import / Export ────────────────────────────────────────────────────
+        function importConfigJSON(input) {
+            const file = input.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = e => {
+                try {
+                    const config = JSON.parse(e.target.result);
+                    if (config.portalTitle)         portalTitle         = config.portalTitle;
+                    if (config.globalFormUrl)       globalFormUrl       = config.globalFormUrl;
+                    if (config.configFetchUrl)      configFetchUrl      = config.configFetchUrl;
+                    if (config.sheetAppUrl)         sheetAppUrl         = config.sheetAppUrl;
+                    if (config.spreadsheetViewUrl)  spreadsheetViewUrl  = config.spreadsheetViewUrl;
+                    if (config.touristRoster)       touristRoster       = config.touristRoster;
+                    if (config.bneiMehagrimRoster)  bneiMehagrimRoster  = config.bneiMehagrimRoster;
+                    if (config.assignmentsCatalog)  assignmentsCatalog  = config.assignmentsCatalog;
+                    if (config.adminPin)            adminPin            = config.adminPin;
+                    if (config.compiledLinks)       compiledLinks       = config.compiledLinks;
+                    if (config.clientProfiles)      clientProfiles      = config.clientProfiles;
+                    if (config.database)            database            = config.database;
+                    if (config.columnMapping)       columnMapping       = config.columnMapping;
+                    if (config.rowValueMapping)     rowValueMapping     = config.rowValueMapping;
+                    studentRoster = [...touristRoster, ...bneiMehagrimRoster];
+                    reconcileChecklistDatabase(); initializeApplication();
+                    showCustomAlert("Imported", "Config loaded successfully.", "success");
+                } catch(err) { showCustomAlert("Import Error", "Could not parse config: " + err.message); }
+            };
+            reader.readAsText(file);
+        }
+
+        function buildConfigObject() {
+            return { baked: false, configId: Date.now().toString(), portalTitle, globalFormUrl, configFetchUrl, sheetAppUrl, spreadsheetViewUrl, touristRoster, bneiMehagrimRoster, assignmentsCatalog, adminPin, compiledLinks, clientProfiles, database, columnMapping, rowValueMapping };
+        }
+
+        function exportConfigJSON() {
+            commitStructuralConfigurationChanges();
+            const config = buildConfigObject();
+            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' }));
+            a.download = `${cleanStr(portalTitle) || 'machal'}_config.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            showCustomAlert("Exported", "Config downloaded as local file.", "success");
+        }
+
+        async function driveSaveConfig() {
+            const url = $('adminSheetAppUrlInput').value.trim() || sheetAppUrl;
+            if (!url) { showCustomAlert("No Script URL", "Paste your Apps Script URL into the Apps Script Sync Link field first."); return; }
+            commitStructuralConfigurationChanges();
+            const config = buildConfigObject();
+            const btn = $('driveSaveBtn');
+            btn.innerText = "Saving…"; btn.disabled = true;
+            try {
+                // Use no-cors mode to avoid CORS block when running from local file.
+                // Apps Script receives the POST and saves to Drive even though we can't
+                // read the response in no-cors mode. We confirm by attempting a load after.
+                await fetch(url, {
+                    method: "POST",
+                    mode: "no-cors",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "save_config", config })
+                });
+                // Brief pause to let the script finish writing
+                await new Promise(r => setTimeout(r, 1800));
+                showCustomAlert("Saved to Drive", "Config sent to Google Drive. Use Load to verify it round-tripped correctly.", "success");
+            } catch(err) {
+                showCustomAlert("Drive Save Error", err.message);
+            } finally {
+                btn.innerText = "↑ Save"; btn.disabled = false;
+            }
+        }
+
+        async function driveLoadConfig() {
+            const url = $('adminSheetAppUrlInput').value.trim() || sheetAppUrl;
+            if (!url) { showCustomAlert("No Script URL", "Paste your Apps Script URL into the Apps Script Sync Link field first."); return; }
+            const btn = $('driveLoadBtn');
+            btn.innerText = "Loading…"; btn.disabled = true;
+            try {
+                // Apps Script doPost with action=load_config — standard CORS fetch.
+                // If this fails due to CORS (local file), falls back to configFetchUrl direct read.
+                let data = null;
+                try {
+                    const resp = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "load_config" })
+                    });
+                    data = await resp.json();
+                } catch(corsErr) {
+                    // CORS blocked — try reading directly from the Drive share URL instead
+                    if (configFetchUrl) {
+                        const fetchUrl = configFetchUrl.replace('/view?usp=sharing','').replace('/view','')
+                            .replace('drive.google.com/file/d/','drive.google.com/uc?export=download&id=')
+                            .replace(/\/d\/([^/]+).*/, '/uc?export=download&id=$1');
+                        const r2 = await fetch(fetchUrl);
+                        const cfg = await r2.json();
+                        data = { success: true, config: cfg };
+                    } else {
+                        throw new Error("CORS blocked and no Config Fetch URL set as fallback.");
+                    }
+                }
+                if (data.success && data.config) {
+                    const config = data.config;
+                    if (config.portalTitle)        portalTitle        = config.portalTitle;
+                    if (config.globalFormUrl)      globalFormUrl      = config.globalFormUrl;
+                    if (config.configFetchUrl)     configFetchUrl     = config.configFetchUrl;
+                    if (config.sheetAppUrl)        sheetAppUrl        = config.sheetAppUrl;
+                    if (config.spreadsheetViewUrl) spreadsheetViewUrl = config.spreadsheetViewUrl;
+                    if (config.touristRoster)      touristRoster      = config.touristRoster;
+                    if (config.bneiMehagrimRoster) bneiMehagrimRoster = config.bneiMehagrimRoster;
+                    if (config.assignmentsCatalog) assignmentsCatalog = config.assignmentsCatalog;
+                    if (config.adminPin)           adminPin           = config.adminPin;
+                    if (config.compiledLinks)      compiledLinks      = config.compiledLinks;
+                    if (config.clientProfiles)     clientProfiles     = config.clientProfiles;
+                    if (config.database)           database           = config.database;
+                    if (config.columnMapping)      columnMapping      = config.columnMapping;
+                    if (config.rowValueMapping)    rowValueMapping    = config.rowValueMapping;
+                    studentRoster = [...touristRoster, ...bneiMehagrimRoster];
+                    reconcileChecklistDatabase();
+                    initializeApplication();
+                    showCustomAlert("Loaded from Drive", "Config loaded from Google Drive.", "success");
+                } else {
+                    showCustomAlert("Drive Load Failed", data.message || data.error || "No config file found.");
+                }
+            } catch(err) {
+                showCustomAlert("Drive Load Error", err.message);
+            } finally {
+                btn.innerText = "↓ Load"; btn.disabled = false;
+            }
+        }
+
+        // Exports a student portal HTML with config baked in AND a configFetchUrl set so it self-updates
+        function exportBakedStudentPortal() {
+            commitStructuralConfigurationChanges();
+            if (!portalTitle && studentRoster.length === 0) { showCustomAlert("No Config", "Import or save a config before exporting."); return; }
+            // Build the baked config blob
+            const bakedConfig = { baked: true, configId: Date.now().toString(), portalTitle, globalFormUrl, configFetchUrl, sheetAppUrl, spreadsheetViewUrl, touristRoster, bneiMehagrimRoster, assignmentsCatalog, compiledLinks, clientProfiles };
+            const configJson = JSON.stringify(bakedConfig, null, 2);
+            // Fetch the student portal template (same-origin, so we build it from the STUDENT_PORTAL_TEMPLATE string below)
+            const html = STUDENT_PORTAL_TEMPLATE.replace('__BAKED_CONFIG_PLACEHOLDER__', configJson);
+            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+            a.download = `${cleanStr(portalTitle) || 'machal'}_student_portal.html`; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            showCustomAlert("Exported", "Student portal exported with baked config.", "success");
+        }
+
+        // ── PIN ────────────────────────────────────────────────────────────────
+        function openPinModal() { $('pinModal').classList.remove('hidden'); setVal('pinInput',''); $('pinErrorText').classList.add('hidden'); $('pinInput').focus(); }
+        function closePinModal() { $('pinModal').classList.add('hidden'); }
+        function verifyTeacherPin() {
+            if ($('pinInput').value.trim() === adminPin) { closePinModal(); initializeApplication(); }
+            else { $('pinErrorText').classList.remove('hidden'); }
+        }
+
+        // ── Reset / wipe ───────────────────────────────────────────────────────
+        function triggerResetActiveStudent() {
+            if (!activeStudent) return;
+            showCustomConfirm(`Reset ${activeStudent}?`, "Wipe this student's checklist back to zero?", async () => {
+                database[activeStudent] = {};
+                assignmentsCatalog.forEach(t => { if (t.type !== 'header') database[activeStudent][t.id] = emptyRecord(); });
+                await saveStudentChecklistToCloud(activeStudent); showCustomAlert("Reset", "Student progress cleared.", "success");
+            });
+        }
+        function triggerGreaterGlobalReset() {
+            showCustomConfirm("Wipe All Progress?", "⚠️ This will clear ALL student checklists. Cannot be undone.", async () => {
+                studentRoster.forEach(s => { database[s] = {}; assignmentsCatalog.forEach(t => { if (t.type !== 'header') database[s][t.id] = emptyRecord(); }); });
+                await saveAllChecklistsToCloud(); showCustomAlert("Wiped", "All checklists cleared.", "success");
+            });
+        }
+
+        // ── Spreadsheet sync ───────────────────────────────────────────────────
+        async function syncExternalSpreadsheetSubmissions() {
+            const apiLink = $('adminSheetAppUrlInput').value.trim(); if (!apiLink) return;
+            try {
+                const data = await (await fetch(apiLink)).json();
+                if (data.error) throw new Error(data.error);
+                spreadsheetData = data; spreadsheetHeaders = data[0] ? data[0].map(h=>String(h).trim()) : [];
+                generateDefaultColumnMapping(spreadsheetHeaders); renderColumnMappingSection();
+            } catch(err) { showCustomAlert("Sync Error", err.message); }
+        }
+
+        function generateDefaultColumnMapping(headers) {
+            assignmentsCatalog.forEach(task => {
+                if (task.type === 'header' || task.noUpload) return;
+                headers.forEach((h, i) => { if (cleanStr(h) === cleanStr(task.name)) columnMapping[task.id] = i; });
+            });
+        }
+
+        function renderColumnMappingSection() {
+            const fields = $('mappingFieldsContainer'); if (!fields) return; fields.innerHTML = '';
+            const saved_s = columnMapping['row_student_col'] ?? -1, saved_t = columnMapping['row_doctype_col'] ?? -1, saved_l = columnMapping['row_link_col'] ?? -1;
+            const opts = (selected) => '<option value="-1">-- Select --</option>' + spreadsheetHeaders.map((h,i) => `<option value="${i}" ${i===selected?'selected':''}>${h}</option>`).join('');
+            fields.innerHTML = `
+                <div class="space-y-2 text-left">
+                    <div class="flex items-center justify-between gap-2 p-2 bg-slate-900 rounded border border-slate-800 text-[11px]">
+                        <span class="font-bold text-slate-300">Student Name Column:</span>
+                        <select id="map_select_student" onchange="triggerRowValueMappingGenerator()" class="bg-slate-950 border border-slate-800 text-slate-200 rounded p-1 outline-none text-[10px] w-48 cursor-pointer">${opts(saved_s)}</select>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 p-2 bg-slate-900 rounded border border-slate-800 text-[11px]">
+                        <span class="font-bold text-slate-300">Document Type Column:</span>
+                        <select id="map_select_doctype" onchange="triggerRowValueMappingGenerator()" class="bg-slate-950 border border-slate-800 text-slate-200 rounded p-1 outline-none text-[10px] w-48 cursor-pointer">${opts(saved_t)}</select>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 p-2 bg-slate-900 rounded border border-slate-808 text-[11px]">
+                        <span class="font-bold text-slate-300">File Link Column:</span>
+                        <select id="map_select_link" class="bg-slate-950 border border-slate-800 text-slate-200 rounded p-1 outline-none text-[10px] w-48 cursor-pointer">${opts(saved_l)}</select>
+                    </div>
+                </div>`;
+            if (saved_t !== -1) setTimeout(triggerRowValueMappingGenerator, 100);
+            $('columnMappingContainer').classList.remove('hidden');
+        }
+
+        function triggerRowValueMappingGenerator() {
+            const sel = $('map_select_doctype'), rvc = $('rowValueMappingContainer');
+            if (!sel || sel.value === "-1" || !rvc) return;
+            const col = parseInt(sel.value, 10);
+            const unique = [...new Set(spreadsheetData.slice(1).map(r => r?.[col]).filter(v => v).map(v => String(v).trim()))];
+            rvc.innerHTML = `<div class="text-[10px] font-bold text-amber-500 uppercase tracking-wide border-b border-slate-800 pb-1 mb-2">Map row values to tasks:</div>`;
+            unique.forEach(val => {
+                const cleaned = cleanStr(val);
+                let matched = rowValueMapping[val] || "";
+                if (!matched) {
+                    let best = "", score = 0;
+                    assignmentsCatalog.forEach(t => { if (t.type==='header'||t.noUpload) return; const tc = cleanStr(t.name); if (tc.includes(cleaned)||cleaned.includes(tc)) { const s=Math.max(cleaned.length,tc.length); if(s>score){score=s;best=t.id;} } });
+                    matched = best;
+                }
+                const opts = `<option value="">-- Ignore --</option>` + assignmentsCatalog.filter(t=>t.type!=='header'&&!t.noUpload).map(t=>`<option value="${t.id}" ${t.id===matched?'selected':''}>${t.name}</option>`).join('');
+                rvc.innerHTML += `<div class="flex items-center justify-between gap-2 p-1.5 bg-slate-900/60 rounded border border-slate-800 text-[10px]"><span class="font-mono text-slate-300 truncate max-w-[50%]">"${val}"</span><select class="row-val-select bg-slate-950 border border-slate-800 text-slate-200 rounded p-1 text-[9px] w-48 cursor-pointer" data-raw-val="${val}">${opts}</select></div>`;
+            });
+            rvc.classList.remove('hidden');
+        }
+
+        async function applyColumnMappingAndRunSync() {
+            if (spreadsheetData.length < 2) return;
+            window.isSyncingSpreadsheet = true;
+            studentRoster.forEach(s => { if(database[s]) Object.keys(database[s]).forEach(id => { if(!database[s][id].verified) { database[s][id].submissionUrl=""; database[s][id].submitted=false; database[s][id].feedbackNote=""; } }); });
+            const sS = $('map_select_student'), tS = $('map_select_doctype'), lS = $('map_select_link');
+            if (!sS||!tS||!lS||sS.value==="-1"||tS.value==="-1"||lS.value==="-1") { showCustomAlert("Required","Select all three columns."); return; }
+            const si=parseInt(sS.value,10), ti=parseInt(tS.value,10), li=parseInt(lS.value,10);
+            columnMapping['row_student_col']=si; columnMapping['row_doctype_col']=ti; columnMapping['row_link_col']=li;
+            document.querySelectorAll('.row-val-select').forEach(s => { rowValueMapping[s.getAttribute('data-raw-val')] = s.value; });
+            let matched=0; const unmatched=new Set();
+            for(let r=1;r<spreadsheetData.length;r++){
+                const row=spreadsheetData[r]; const name=row[si]?String(row[si]).trim():""; const doc=row[ti]?String(row[ti]).trim():""; const url=row[li]?String(row[li]).trim():"";
+                if(!name||!doc||!url.startsWith('http')) continue;
+                const student=studentRoster.find(n=>cleanStr(n)===cleanStr(name)); if(!student){unmatched.add(name);continue;}
+                const taskId=rowValueMapping[doc]; if(!taskId) continue;
+                database[student][taskId].submissionUrl=url; database[student][taskId].submitted=true; matched++;
+            }
+            const logEl = $('syncDiagnosticsConsole');
+            if (logEl) { logEl.classList.remove('hidden'); logEl.innerHTML += `<div class="text-emerald-400">✓ Synced ${matched} submissions.</div>`; if(unmatched.size>0) logEl.innerHTML += `<div class="text-amber-400">⚠ Unmatched names: ${[...unmatched].join(', ')}</div>`; }
+            await saveAllChecklistsToCloud();
+            renderProcessTracker();
+            showCustomAlert("Sync Complete", `Matched ${matched} submissions.`, "success");
+            setTimeout(() => { window.isSyncingSpreadsheet = false; }, 1000);
+        }
+
+        // ── Helpers ────────────────────────────────────────────────────────────
+        function itemAppliesToActiveStudent(task) {
+            if (!activeStudent) return true;
+            const isTourist = touristRoster.includes(activeStudent);
+            if (isTourist && task.appliesToTourists === false) return false;
+            if (!isTourist && task.appliesToBneiMehagrim === false) return false;
+            return true;
+        }
+
+        // ── Cloud ──────────────────────────────────────────────────────────────
+        async function saveSettingsToCloud() { saveToLocalStorage(); if(!firestoreActive||!db) return; try { await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings').doc('global').set({portalTitle,globalFormUrl,configFetchUrl,sheetAppUrl,spreadsheetViewUrl,adminPin,touristRoster,bneiMehagrimRoster}); } catch(e){console.warn(e);} }
+        async function saveCatalogToCloud() { saveToLocalStorage(); renderAdminAssignmentsList(); if(!firestoreActive||!db) return; try { await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('catalog').doc('main').set({assignmentsCatalog}); } catch(e){console.warn(e);} }
+        async function saveCompiledLinksToCloud() { saveToLocalStorage(); if(!firestoreActive||!db) return; try { await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('dossiers').doc('compiled_links').set({compiledLinks}); } catch(e){console.warn(e);} }
+        async function saveStudentChecklistToCloud(name) { saveToLocalStorage(); renderProcessTracker(); if(!firestoreActive||!db) return; try { await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('student_checklist_states').doc(name).set({checklist:database[name]}); } catch(e){console.warn(e);} }
+        async function saveAllChecklistsToCloud() { saveToLocalStorage(); renderProcessTracker(); if(!firestoreActive||!db) return; try { const b=db.batch(); studentRoster.forEach(s => { if(database[s]) b.set(db.collection('artifacts').doc(appId).collection('public').doc('data').collection('student_checklist_states').doc(s),{checklist:database[s]}); }); await b.commit(); } catch(e){console.warn(e);} }
+        async function saveStudentProfileToCloud(name) { saveToLocalStorage(); if(!firestoreActive||!db) return; try { await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('student_profiles').doc(name).set(clientProfiles[name]); } catch(e){console.warn(e);} }
+
+        function updateSyncStatusUI() {
+            const badge = $('syncStatusBadge'); if (!badge) return;
+            badge.innerText = firestoreActive ? "● Cloud Synced" : "● Local Mode";
+            badge.className = `px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${firestoreActive ? 'bg-emerald-950 text-emerald-400 border-emerald-800' : 'bg-amber-950 text-amber-400 border-amber-900/40'}`;
+        }
+
+        function initCloudFirestoreSync() {
+            if (typeof __firebase_config === 'undefined' || !__firebase_config) return;
+            try {
+                const cfg = JSON.parse(__firebase_config); if (!cfg?.apiKey) return;
+                firebaseApp = firebase.initializeApp(cfg); db = firebase.firestore(); auth = firebase.auth();
+                const go = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await auth.signInWithCustomToken(__initial_auth_token);
+                    else await auth.signInAnonymously();
+                    firestoreActive = true; updateSyncStatusUI();
+                    db.collection('artifacts').doc(appId).collection('public').doc('data').collection('student_checklist_states').onSnapshot(snap => { if(window.isSyncingSpreadsheet) return; snap.forEach(doc => { if(doc.exists&&doc.data().checklist) database[doc.id]=doc.data().checklist; }); renderProcessTracker(); }, e=>console.warn(e));
+                };
+                go();
+            } catch(e) { console.warn("Firestore offline:", e.message); }
+        }
+
+        // ── Event setup ────────────────────────────────────────────────────────
+        function setupEventInterceptors() {
+            safeOn('saveGlobalConfigBtn',    'click', commitStructuralConfigurationChanges);
+            safeOn('resetStudentBtn',        'click', triggerResetActiveStudent);
+            safeOn('globalWipeBtn',          'click', triggerGreaterGlobalReset);
+            safeOn('importSpreadsheetBtn',   'click', syncExternalSpreadsheetSubmissions);
+            safeOn('applyMappingBtn',        'click', applyColumnMappingAndRunSync);
+            safeOn('exportCsvBtn',           'click', exportProfilesToCSV);
+            safeOn('compileDeskPdfBtn',      'click', executeProcessingDeskMerge);
+            safeOn('publishDossierLinkBtn',  'click', saveCompiledUrlToActiveTarget);
+            safeOn('closeAlertBtn',          'click', closeCustomAlert);
+            safeOn('closeConfirmBtn',        'click', closeCustomConfirm);
+            safeOn('confirmActionButton',    'click', executeConfirmedAction);
+            safeOn('spreadsheetSyncAreaHeader', 'click', () => toggleElementCollapse('spreadsheetSyncArea','syncToggleArrow'));
+            safeOn('dossierCompilerHeader',     'click', () => toggleElementCollapse('dossierCompilerArea','dossierToggleArrow'));
+            safeOn('profilesDirectoryHeader',   'click', () => toggleElementCollapse('profilesDirectoryExpandableArea','directoryToggleArrow'));
+            safeOn('pinInput', 'keydown', e => { if (e.key === 'Enter') verifyTeacherPin(); });
+            ['hebrewName','whatsapp','israeliCell','email','passport','machalId'].forEach(field => {
+                safeOn('profile_' + field, 'input', e => saveActiveProfileField(field, e.target.value));
+            });
+        }
+
+        // ── Student portal template (baked export) ─────────────────────────────
+        // This is the full student portal HTML as a JS template string.
+        // The supervisor's "Export Student Portal" button injects the live config JSON
+        // in place of __BAKED_CONFIG_PLACEHOLDER__ and downloads the result.
+        const STUDENT_PORTAL_TEMPLATE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Paperwork Portal</title>
+    <script src="https://cdn.tailwindcss.com"><\/script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col text-slate-800 antialiased">
+
+<script id="portal-data" type="application/json">
+__BAKED_CONFIG_PLACEHOLDER__
+<\/script>
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center space-x-3 flex-1 min-w-0">
+            <div class="bg-indigo-600 p-2.5 rounded-xl text-white shadow-md shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><\/svg>
+            </div>
+            <h1 id="portalTitleHeader" class="font-bold text-lg text-slate-900 tracking-tight truncate">Paperwork Portal</h1>
+        </div>
+        <div class="flex items-center space-x-3 shrink-0">
+            <select id="studentSelector" onchange="switchStudent(this.value)" class="bg-slate-50 border border-slate-200 text-slate-900 text-sm font-semibold rounded-xl p-2 outline-none cursor-pointer hidden"></select>
+            <div id="headerUserLabel" class="hidden"></div>
+        </div>
+    </div>
+</header>
+
+<div id="noConfigScreen" class="hidden flex-1 flex items-center justify-center p-8">
+    <div class="text-center space-y-3 max-w-sm">
+        <div class="text-5xl">📋</div>
+        <h2 class="text-xl font-bold text-slate-800">No configuration found</h2>
+        <p class="text-sm text-slate-500">This portal file has not been configured. Please contact your supervisor for an updated portal file.</p>
+    </div>
+</div>
+
+<main id="mainPortalContent" class="hidden flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-8">
+
+    <div id="masterDossierCardContainer" class="hidden"></div>
+
+    <section class="bg-gradient-to-r from-indigo-700 via-indigo-800 to-indigo-900 rounded-2xl p-6 text-white shadow-lg flex flex-col md:flex-row md:items-center md:justify-between gap-6 overflow-hidden">
+        <div class="space-y-1">
+            <h2 class="text-2xl font-black tracking-tight" id="welcomeNameText">Welcome</h2>
+            <p class="text-indigo-100 text-sm mt-1">Track your paperwork progress. Download required forms and submit completed documents using the buttons below.</p>
+        </div>
+        <div class="bg-white/10 backdrop-blur-md rounded-2xl p-4 flex items-center space-x-4 self-start md:self-auto">
+            <div class="relative flex items-center justify-center shrink-0">
+                <svg class="w-16 h-16 transform -rotate-90">
+                    <circle cx="32" cy="32" r="28" stroke="currentColor" class="text-indigo-950/20" stroke-width="4.5" fill="transparent"/>
+                    <circle cx="32" cy="32" r="28" stroke="currentColor" id="progressBarRadial" class="text-amber-400 transition-all duration-500" stroke-width="4.5" fill="transparent" stroke-dasharray="175.92" stroke-dashoffset="175.92"/>
+                <\/svg>
+                <span id="progressBarPercentageText" class="absolute text-xs font-extrabold text-white">0%</span>
+            </div>
+            <div>
+                <p class="text-[10px] uppercase font-bold text-indigo-200 tracking-wider">Progress</p>
+                <p id="progressCountsText" class="text-lg font-black text-white">0 / 0 Done</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="bg-white border border-slate-200 rounded-2xl p-5 shadow-md space-y-4">
+        <h3 class="font-bold text-slate-900 text-sm flex items-center space-x-2 border-b border-slate-100 pb-3">
+            <span class="bg-indigo-100 text-indigo-700 p-1.5 rounded-lg">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/><\/svg>
+            </span>
+            <span>Contact & Identification Record</span>
+        </h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            <div class="space-y-1"><label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Name in Hebrew</label><input type="text" id="profile_hebrewName" oninput="saveActiveProfileField('hebrewName',this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 transition"></div>
+            <div class="space-y-1"><label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">WhatsApp Number</label><input type="tel" id="profile_whatsapp" oninput="saveActiveProfileField('whatsapp',this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 transition"></div>
+            <div class="space-y-1"><label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Israeli Cell</label><input type="tel" id="profile_israeliCell" oninput="saveActiveProfileField('israeliCell',this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 transition"></div>
+            <div class="space-y-1"><label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Email Address</label><input type="email" id="profile_email" oninput="saveActiveProfileField('email',this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 transition"></div>
+            <div class="space-y-1"><label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Passport Number</label><input type="text" id="profile_passport" oninput="saveActiveProfileField('passport',this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 transition"></div>
+            <div class="space-y-1"><label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Machal ID</label><input type="text" id="profile_machalId" oninput="saveActiveProfileField('machalId',this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 transition"></div>
+        </div>
+    </section>
+
+    <section class="bg-white border border-slate-200 rounded-2xl shadow-md overflow-hidden flex flex-col">
+        <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-slate-50/50">
+            <div>
+                <h3 class="font-extrabold text-slate-900 text-base">Paperwork Tracker</h3>
+                <p class="text-xs text-slate-400 mt-1">Progress is saved automatically in your browser.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500">
+                <div class="flex items-center"><span class="w-2.5 h-2.5 bg-slate-200 rounded-full inline-block mr-1.5 border border-slate-300"></span>Not Started</div>
+                <div class="flex items-center"><span class="w-2.5 h-2.5 bg-blue-500 rounded-full inline-block mr-1.5"></span>In Progress</div>
+                <div class="flex items-center"><span class="w-2.5 h-2.5 bg-amber-400 rounded-full inline-block mr-1.5"></span>Pending Review</div>
+                <div class="flex items-center"><span class="w-2.5 h-2.5 bg-emerald-500 rounded-full inline-block mr-1.5 animate-pulse"></span>Complete</div>
+            </div>
+        </div>
+        <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-slate-100/80 border-b border-slate-200 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                        <th class="py-3.5 px-6 w-16 text-center">#</th>
+                        <th class="py-3.5 px-6">Requirement</th>
+                        <th class="py-3.5 px-6 text-center w-44">Step 1: Download</th>
+                        <th class="py-3.5 px-6 text-center w-52">Step 2: Submit</th>
+                        <th class="py-3.5 px-6 text-center w-40">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="studentChecklistTableBody" class="divide-y divide-slate-100 text-sm"></tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<div id="deviceInitModal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-md hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 text-center">
+        <div class="bg-indigo-100 text-indigo-700 w-16 h-16 rounded-full flex items-center justify-center mx-auto">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 009 11a5 5 0 000-10m6 11c0 3.517 1.009 6.799 2.753 9.571m3.44-2.04l-.054-.09A13.916 13.916 0 0015 11a5 5 0 000-10"/><\/svg>
+        </div>
+        <div>
+            <h3 class="text-xl font-bold text-slate-900" id="initModalTitle">Welcome</h3>
+            <p class="text-xs text-slate-500 mt-1 leading-relaxed">Select your name to initialize your personal checklist. This device will be locked to your profile.</p>
+        </div>
+        <div class="text-left space-y-1">
+            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Your Name</label>
+            <select id="deviceInitSelector" class="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm font-semibold rounded-xl p-3 outline-none cursor-pointer"></select>
+        </div>
+        <button onclick="confirmDeviceOwner()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition cursor-pointer">Initialize My Account</button>
+    </div>
+</div>
+
+<script>
+    let portalTitle="",globalFormUrl="",configFetchUrl="",touristRoster=[],bneiMehagrimRoster=[],studentRoster=[],assignmentsCatalog=[],compiledLinks={},clientProfiles={};
+    let activeStudent="",database={};
+
+    async function loadInitialConfiguration() {
+        try {
+            const seed = JSON.parse(document.getElementById('portal-data').innerText);
+            // Apply seed (baked) config first
+            applyConfig(seed);
+            // Then try to fetch updates from configFetchUrl
+            if (configFetchUrl) {
+                try {
+                    // Convert Google Drive share link to direct fetch URL
+                    const fetchUrl = convertGDriveUrl(configFetchUrl);
+                    const resp = await fetch(fetchUrl);
+                    if (resp.ok) {
+                        const fresh = await resp.json();
+                        applyConfig(fresh);
+                        // Save fresh config to localStorage for next offline load
+                        localStorage.setItem('local_cached_config', JSON.stringify(fresh));
+                    }
+                } catch(fetchErr) {
+                    // Fetch failed — try cached config from last successful fetch
+                    const cached = localStorage.getItem('local_cached_config');
+                    if (cached) { try { applyConfig(JSON.parse(cached)); } catch(_){} }
+                }
+            }
+            // Load checklist database from localStorage
+            const localDB = localStorage.getItem('local_machal_checklist_db');
+            if (localDB) database = JSON.parse(localDB);
+            else buildCleanChecklistDatabase();
+            reconcileChecklistDatabase();
+        } catch(e) { console.error("Config load error:", e); }
+    }
+
+    function convertGDriveUrl(url) {
+        // Convert Google Drive share link to direct download
+        const match = url.match(/\\/d\\/([a-zA-Z0-9_-]+)/);
+        if (match) return \`https://drive.google.com/uc?export=download&id=\${match[1]}\`;
+        return url;
+    }
+
+    function applyConfig(config) {
+        if (config.portalTitle)        portalTitle        = config.portalTitle;
+        if (config.globalFormUrl)      globalFormUrl      = config.globalFormUrl;
+        if (config.configFetchUrl)     configFetchUrl     = config.configFetchUrl;
+        if (config.touristRoster)      touristRoster      = config.touristRoster;
+        if (config.bneiMehagrimRoster) bneiMehagrimRoster = config.bneiMehagrimRoster;
+        if (config.assignmentsCatalog) assignmentsCatalog = config.assignmentsCatalog;
+        if (config.compiledLinks)      compiledLinks      = config.compiledLinks;
+        if (config.clientProfiles)     clientProfiles     = config.clientProfiles;
+        studentRoster = [...touristRoster, ...bneiMehagrimRoster];
+    }
+
+    function buildCleanChecklistDatabase() {
+        database = {};
+        studentRoster.forEach(name => { database[name] = {}; assignmentsCatalog.forEach(t => { if(t.type!=='header') database[name][t.id]=emptyRec(); }); });
+        saveToLS();
+    }
+
+    function reconcileChecklistDatabase() {
+        studentRoster.forEach(name => {
+            if (!database[name]) database[name] = {};
+            if (!clientProfiles[name]) clientProfiles[name] = emptyProfile();
+            assignmentsCatalog.forEach(t => { if(t.type!=='header'&&!database[name][t.id]) database[name][t.id]=emptyRec(); });
+        });
+        saveToLS();
+    }
+
+    function emptyRec() { return {downloaded:false,submitted:false,verified:false,submissionUrl:"",feedbackNote:""}; }
+    function emptyProfile() { return {hebrewName:"",whatsapp:"",israeliCell:"",email:"",passport:"",machalId:""}; }
+    function saveToLS() { localStorage.setItem('local_machal_checklist_db',JSON.stringify(database)); localStorage.setItem('local_clientProfiles',JSON.stringify(clientProfiles)); }
+
+    function initializeApplication() {
+        const hasConfig = studentRoster.length > 0 || portalTitle;
+        document.getElementById('noConfigScreen').classList.toggle('hidden', hasConfig);
+        document.getElementById('mainPortalContent').classList.toggle('hidden', !hasConfig);
+        if (!hasConfig) return;
+
+        const hdr = document.getElementById('portalTitleHeader'); if(hdr) hdr.innerText = portalTitle;
+        const initTitle = document.getElementById('initModalTitle'); if(initTitle) initTitle.innerText = \`Welcome to \${portalTitle}\`;
+
+        const selector = document.getElementById('studentSelector');
+        const headerUserLabel = document.getElementById('headerUserLabel');
+        const savedOwner = localStorage.getItem('local_device_owner');
+
+        if (selector) { selector.innerHTML=''; studentRoster.forEach(name=>{ const o=document.createElement('option');o.value=name;o.innerText=name;selector.appendChild(o); }); }
+
+        if (savedOwner && studentRoster.includes(savedOwner)) {
+            activeStudent = savedOwner;
+            if (selector) selector.classList.add('hidden');
+            if (headerUserLabel) { headerUserLabel.className="text-sm font-extrabold text-indigo-700 bg-indigo-50 px-3.5 py-1.5 rounded-xl border border-indigo-100 flex items-center space-x-1.5 select-none"; headerUserLabel.innerHTML=\`<span>● \${savedOwner}</span>\`; headerUserLabel.classList.remove('hidden'); }
+        } else {
+            if (selector) { selector.classList.remove('hidden'); if (studentRoster.length>0) { activeStudent=studentRoster[0]; selector.value=activeStudent; } }
+            if (headerUserLabel) headerUserLabel.classList.add('hidden');
+            const initSel = document.getElementById('deviceInitSelector');
+            if (initSel) { initSel.innerHTML='<option value="">-- Choose your name --</option>'; studentRoster.forEach(name=>{ const o=document.createElement('option');o.value=name;o.innerText=name;initSel.appendChild(o); }); }
+            document.getElementById('deviceInitModal').classList.remove('hidden');
+        }
+        renderStudentChecklist();
+        renderActiveClientProfileFields();
+    }
+
+    function confirmDeviceOwner() {
+        const val = document.getElementById('deviceInitSelector').value; if (!val) return;
+        localStorage.setItem('local_device_owner', val); activeStudent = val;
+        document.getElementById('deviceInitModal').classList.add('hidden'); initializeApplication();
+    }
+
+    function switchStudent(name) { activeStudent=name; renderStudentChecklist(); renderActiveClientProfileFields(); }
+
+    function itemApplies(task) {
+        if (!activeStudent) return false;
+        const isTourist = touristRoster.includes(activeStudent);
+        if (isTourist) return task.appliesToTourists !== false;
+        return task.appliesToBneiMehagrim !== false;
+    }
+
+    function renderActiveClientProfileFields() {
+        if (!activeStudent) return;
+        const p = clientProfiles[activeStudent] || emptyProfile();
+        ['hebrewName','whatsapp','israeliCell','email','passport','machalId'].forEach(f => { const el=document.getElementById('profile_'+f); if(el) el.value=p[f]||""; });
+    }
+
+    function saveActiveProfileField(field, value) {
+        if (!activeStudent) return;
+        if (!clientProfiles[activeStudent]) clientProfiles[activeStudent]=emptyProfile();
+        clientProfiles[activeStudent][field]=value; saveToLS();
+    }
+
+    function registerDownloadProgress(id) {
+        if (!database[activeStudent]) database[activeStudent]={};
+        database[activeStudent][id].downloaded=true;
+        const task=assignmentsCatalog.find(t=>t.id===id);
+        if (task&&task.noUpload) { database[activeStudent][id].submitted=true; database[activeStudent][id].verified=true; }
+        saveToLS(); renderStudentChecklist();
+    }
+
+    function triggerStudentFormSubmit(taskId) {
+        if (!database[activeStudent]) database[activeStudent]={};
+        database[activeStudent][taskId].downloaded=true; database[activeStudent][taskId].submitted=true;
+        database[activeStudent][taskId].verified=false; database[activeStudent][taskId].feedbackNote="";
+        saveToLS(); renderStudentChecklist(); window.open(globalFormUrl,'_blank');
+    }
+
+    function renderStudentChecklist() {
+        const tbody=document.getElementById('studentChecklistTableBody'); if(!tbody) return; tbody.innerHTML='';
+        const cardContainer=document.getElementById('masterDossierCardContainer');
+        const finalLink=compiledLinks[activeStudent];
+        if (finalLink&&cardContainer) {
+            cardContainer.classList.remove('hidden');
+            cardContainer.innerHTML=\`<div class="bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 rounded-2xl p-5 text-white shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div class="space-y-1 flex-1"><h4 class="text-lg font-black">✓ Your Final Dossier is Ready</h4><p class="text-xs text-emerald-100">Your supervisor has compiled your completed paperwork into one official bundle.</p></div><a href="\${finalLink}" target="_blank" class="bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs py-3 px-5 rounded-xl transition flex items-center justify-center shrink-0">Download Dossier</a></div>\`;
+        } else if (cardContainer) cardContainer.classList.add('hidden');
+
+        let taskNum = 0;
+        assignmentsCatalog.forEach(task => {
+            if (!itemApplies(task)) return;
+            const row=document.createElement('tr'); row.className="border-b border-slate-100 text-left text-xs sm:text-sm";
+            if (task.type==='header') {
+                row.className="bg-slate-50 border-y border-slate-200/60";
+                row.innerHTML=\`<td colspan="5" class="py-3 px-6"><div class="font-extrabold text-slate-800 text-sm">\${task.name}</div>\${task.instructions?\`<p class="text-xs text-slate-500 mt-0.5 font-semibold">\${task.instructions}</p>\`:''}</td>\`;
+                tbody.appendChild(row); return;
+            }
+            taskNum++;
+            const prog=database[activeStudent]?.[task.id]||emptyRec();
+            const isVerified=prog.verified, isWait=prog.submitted&&!prog.verified;
+            const feedbackBlock=prog.feedbackNote?\`<div class="mt-2 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-100 rounded-xl px-3 py-1.5 flex items-center gap-1.5">⚠️ Revision: "\${prog.feedbackNote}"</div>\`:"";
+
+            row.innerHTML=\`<td class="py-4 px-6 text-center font-bold text-slate-400 font-mono">\${String(taskNum).padStart(2,'0')}</td>
+                <td class="py-4 px-6"><div class="font-bold text-slate-900">\${task.name}</div>\${task.description?\`<p class="text-[11px] text-slate-400 mt-1">\${task.description}</p>\`:''}\${feedbackBlock}</td>\`;
+
+            const dlCell=document.createElement('td'); dlCell.className="py-4 px-6 text-center";
+            dlCell.innerHTML=task.fileUrl?\`<a href="\${task.fileUrl}" target="_blank" onclick="registerDownloadProgress('\${task.id}')" class="inline-flex px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 font-bold text-xs rounded-lg transition">\${task.btnText||"Get Form"}</a>\`:\`<span class="text-xs text-slate-400 italic">No Download</span>\`;
+            row.appendChild(dlCell);
+
+            const upCell=document.createElement('td'); upCell.className="py-4 px-6 text-center";
+            if (task.noUpload) { upCell.innerHTML=isVerified?\`<span class="text-emerald-600 font-bold text-xs">✓ Complete</span>\`:\`<span class="text-xs text-slate-400 italic">Info Only</span>\`; }
+            else { upCell.innerHTML=isVerified?\`<span class="text-slate-400 bg-slate-50 px-3 py-1 border border-slate-200 text-xs font-bold rounded-lg">Received</span>\`:\`<button onclick="triggerStudentFormSubmit('\${task.id}')" class="inline-flex px-3.5 py-1.5 border text-xs font-bold rounded-lg \${isWait?'bg-amber-50 text-amber-700 border-amber-200':'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent'} transition cursor-pointer">\${isWait?'Upload Again':'Submit File'}</button>\`; }
+            row.appendChild(upCell);
+
+            const bCell=document.createElement('td'); bCell.className="py-4 px-6 text-center whitespace-nowrap";
+            bCell.innerHTML=isVerified?\`<span class="inline-flex items-center px-2.5 py-0.5 text-xs font-bold bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">Complete</span>\`
+                :isWait?\`<span class="inline-flex items-center px-2.5 py-0.5 text-xs font-bold bg-amber-100 text-amber-800 rounded-full border border-amber-200 animate-pulse">Pending Review</span>\`
+                :prog.downloaded?\`<span class="inline-flex items-center px-2.5 py-0.5 text-xs font-bold bg-blue-100 text-blue-800 rounded-full border border-blue-200">In Progress</span>\`
+                :\`<span class="inline-flex items-center px-2.5 py-0.5 text-xs font-bold bg-slate-100 text-slate-500 rounded-full border border-slate-200">Not Started</span>\`;
+            row.appendChild(bCell);
+            tbody.appendChild(row);
+        });
+        calculateAggregatedMetrics();
+    }
+
+    function calculateAggregatedMetrics() {
+        const tasks=assignmentsCatalog.filter(t=>t.type!=='header'&&itemApplies(t));
+        const completed=tasks.filter(t=>database[activeStudent]?.[t.id]?.verified).length;
+        const pct=tasks.length?Math.round((completed/tasks.length)*100):0;
+        const ct=document.getElementById('progressCountsText'); if(ct) ct.innerText=\`\${completed} / \${tasks.length} Done\`;
+        const pt=document.getElementById('progressBarPercentageText'); if(pt) pt.innerText=\`\${pct}%\`;
+        const bar=document.getElementById('progressBarRadial'); if(bar) bar.style.strokeDashoffset=175.92-(pct/100)*175.92;
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => { await loadInitialConfiguration(); initializeApplication(); });
+    window.switchStudent=switchStudent; window.saveActiveProfileField=saveActiveProfileField;
+    window.registerDownloadProgress=registerDownloadProgress; window.triggerStudentFormSubmit=triggerStudentFormSubmit; window.confirmDeviceOwner=confirmDeviceOwner;
+<\/script>
+</body>
+</html>`;
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadInitialConfiguration();
+            initializeApplication();
+            setupEventInterceptors();
+            initCloudFirestoreSync();
+            openPinModal();
+        });
+
+        // Global exports
+        window.switchStudent=switchStudent; window.setItemTypeInput=setItemTypeInput; window.addNewCatalogItem=addNewCatalogItem;
+        window.startEditingCatalogItem=startEditingCatalogItem; window.cancelEditingCatalogItem=cancelEditingCatalogItem;
+        window.removeCatalogItemFromIndex=removeCatalogItemFromIndex; window.moveCatalogItemIndex=moveCatalogItemIndex;
+        window.approveQueueItem=approveQueueItem; window.promptQueueRevision=promptQueueRevision;
+        window.switchTrackerTab=switchTrackerTab; window.saveActiveProfileField=saveActiveProfileField;
+        window.openPinModal=openPinModal; window.closePinModal=closePinModal; window.verifyTeacherPin=verifyTeacherPin;
+        window.closeCustomAlert=closeCustomAlert; window.closeCustomConfirm=closeCustomConfirm;
+        window.executeConfirmedAction=executeConfirmedAction; window.closeCustomPrompt=closeCustomPrompt; window.submitCustomPrompt=submitCustomPrompt;
+        window.clearMergeDeskBufferSlot=clearMergeDeskBufferSlot; window.processFileToMergeDeskBuffer=processFileToMergeDeskBuffer;
+        window.importConfigJSON=importConfigJSON; window.exportConfigJSON=exportConfigJSON; window.exportBakedStudentPortal=exportBakedStudentPortal; window.driveSaveConfig=driveSaveConfig; window.driveLoadConfig=driveLoadConfig;
+        window.triggerRowValueMappingGenerator=triggerRowValueMappingGenerator; window.updateFormActionButtons=updateFormActionButtons;
+    </script>
+</body>
+</html>
