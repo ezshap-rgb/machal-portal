@@ -966,22 +966,11 @@
             const btn = $('driveLoadBtn');
             btn.innerText = "Loading…"; btn.disabled = true;
             try {
-                // Apps Script redirects POSTs — use configFetchUrl (direct Drive link) for Load
-                // and reserve the script URL only for Save (no-cors write).
-                let data = null;
-                const fetchUrl = (configFetchUrl || $('adminConfigFetchUrlInput').value.trim());
-                if (fetchUrl) {
-                    // Convert Google Drive share link to direct download URL
-                    const directUrl = fetchUrl
-                        .replace(/\/file\/d\/([^/]+).*/, '/uc?export=download&id=$1')
-                        .replace('drive.google.com/open?id=', 'drive.google.com/uc?export=download&id=');
-                    const resp = await fetch(directUrl);
-                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                    const cfg = await resp.json();
-                    data = { success: true, config: cfg };
-                } else {
-                    throw new Error("No Config Fetch URL set. Paste your Drive share link into the Config JSON Fetch URL field.");
-                }
+                // Load via GET request with ?action=load_config — avoids POST redirect CORS issue
+                const getUrl = url + (url.includes('?') ? '&' : '?') + 'action=load_config';
+                const resp = await fetch(getUrl);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
                 if (data.success && data.config) {
                     const config = data.config;
                     if (config.portalTitle)        portalTitle        = config.portalTitle;
