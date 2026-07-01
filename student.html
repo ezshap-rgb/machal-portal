@@ -19,7 +19,7 @@
 <script id="portal-data" type="application/json">
 {
   "baked": false,
-  "configFetchUrl": "https://drive.google.com/file/d/1WJ9ZNskjaikEa_eHzVm9a8HTPFuVV7wr/view?usp=drive_link"
+  "configFetchUrl": "https://script.google.com/macros/s/AKfycbxigT1zgKSh74SAxp9GJmDLZ4gMOP8OC9UBPCsyZmhzMUbY1QOOpXMseuHKrqzA1cnJ/exec?action=load_config"
 }
 </script>
 
@@ -144,11 +144,13 @@
             // Then try to fetch updates from configFetchUrl
             if (configFetchUrl) {
                 try {
-                    // Convert Google Drive share link to direct fetch URL
+                    // Build fetch URL — Apps Script URL or Google Drive share link
                     const fetchUrl = convertGDriveUrl(configFetchUrl);
                     const resp = await fetch(fetchUrl);
                     if (resp.ok) {
-                        const fresh = await resp.json();
+                        const data = await resp.json();
+                        // Handle both raw config JSON and Apps Script wrapper {success, config}
+                        const fresh = (data && data.success && data.config) ? data.config : data;
                         applyConfig(fresh);
                         // Save fresh config to localStorage for next offline load
                         localStorage.setItem('local_cached_config', JSON.stringify(fresh));
