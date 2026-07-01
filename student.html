@@ -170,7 +170,7 @@
     function convertGDriveUrl(url) {
         // Convert Google Drive share link to direct download
         const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        if (match) return `https://drive.google.com/uc?export=download&id=\${match[1]}`;
+        if (match) return `https://drive.google.com/uc?export=download&id=${match[1]}`;
         return url;
     }
 
@@ -212,7 +212,7 @@
         if (!hasConfig) return;
 
         const hdr = document.getElementById('portalTitleHeader'); if(hdr) hdr.innerText = portalTitle;
-        const initTitle = document.getElementById('initModalTitle'); if(initTitle) initTitle.innerText = `Welcome to \${portalTitle}`;
+        const initTitle = document.getElementById('initModalTitle'); if(initTitle) initTitle.innerText = `Welcome to ${portalTitle}`;
 
         const selector = document.getElementById('studentSelector');
         const headerUserLabel = document.getElementById('headerUserLabel');
@@ -223,7 +223,7 @@
         if (savedOwner && studentRoster.includes(savedOwner)) {
             activeStudent = savedOwner;
             if (selector) selector.classList.add('hidden');
-            if (headerUserLabel) { headerUserLabel.className="text-sm font-extrabold text-indigo-700 bg-indigo-50 px-3.5 py-1.5 rounded-xl border border-indigo-100 flex items-center space-x-1.5 select-none"; headerUserLabel.innerHTML=`<span>● \${savedOwner}</span>`; headerUserLabel.classList.remove('hidden'); }
+            if (headerUserLabel) { headerUserLabel.className="text-sm font-extrabold text-indigo-700 bg-indigo-50 px-3.5 py-1.5 rounded-xl border border-indigo-100 flex items-center space-x-1.5 select-none"; headerUserLabel.innerHTML=`<span>● ${savedOwner}</span>`; headerUserLabel.classList.remove('hidden'); }
         } else {
             if (selector) { selector.classList.remove('hidden'); if (studentRoster.length>0) { activeStudent=studentRoster[0]; selector.value=activeStudent; } }
             if (headerUserLabel) headerUserLabel.classList.add('hidden');
@@ -283,7 +283,7 @@
         const finalLink=compiledLinks[activeStudent];
         if (finalLink&&cardContainer) {
             cardContainer.classList.remove('hidden');
-            cardContainer.innerHTML=`<div class="bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 rounded-2xl p-5 text-white shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div class="space-y-1 flex-1"><h4 class="text-lg font-black">✓ Your Final Dossier is Ready</h4><p class="text-xs text-emerald-100">Your supervisor has compiled your completed paperwork into one official bundle.</p></div><a href="\${finalLink}" target="_blank" class="bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs py-3 px-5 rounded-xl transition flex items-center justify-center shrink-0">Download Dossier</a></div>`;
+            cardContainer.innerHTML=`<div class="bg-gradient-to-r from-emerald-600 via-emerald-700 to-emerald-800 rounded-2xl p-5 text-white shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div class="space-y-1 flex-1"><h4 class="text-lg font-black">✓ Your Final Dossier is Ready</h4><p class="text-xs text-emerald-100">Your supervisor has compiled your completed paperwork into one official bundle.</p></div><a href="${finalLink}" target="_blank" class="bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs py-3 px-5 rounded-xl transition flex items-center justify-center shrink-0">Download Dossier</a></div>`;
         } else if (cardContainer) cardContainer.classList.add('hidden');
 
         let taskNum = 0;
@@ -292,24 +292,24 @@
             const row=document.createElement('tr'); row.className="border-b border-slate-100 text-left text-xs sm:text-sm";
             if (task.type==='header') {
                 row.className="bg-slate-50 border-y border-slate-200/60";
-                row.innerHTML=`<td colspan="5" class="py-3 px-6"><div class="font-extrabold text-slate-800 text-sm">\${task.name}</div>\${task.instructions?`<p class="text-xs text-slate-500 mt-0.5 font-semibold">\${task.instructions}</p>`:''}</td>`;
+                row.innerHTML=`<td colspan="5" class="py-3 px-6"><div class="font-extrabold text-slate-800 text-sm">${task.name}</div>${task.instructions?`<p class="text-xs text-slate-500 mt-0.5 font-semibold">${task.instructions}</p>`:''}</td>`;
                 tbody.appendChild(row); return;
             }
             taskNum++;
             const prog=database[activeStudent]?.[task.id]||emptyRec();
             const isVerified=prog.verified, isWait=prog.submitted&&!prog.verified;
-            const feedbackBlock=prog.feedbackNote?`<div class="mt-2 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-100 rounded-xl px-3 py-1.5 flex items-center gap-1.5">⚠️ Revision: "\${prog.feedbackNote}"</div>`:"";
+            const feedbackBlock=prog.feedbackNote?`<div class="mt-2 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-100 rounded-xl px-3 py-1.5 flex items-center gap-1.5">⚠️ Revision: "${prog.feedbackNote}"</div>`:"";
 
-            row.innerHTML=`<td class="py-4 px-6 text-center font-bold text-slate-400 font-mono">\${String(taskNum).padStart(2,'0')}</td>
-                <td class="py-4 px-6"><div class="font-bold text-slate-900">\${task.name}</div>\${task.description?`<p class="text-[11px] text-slate-400 mt-1">\${task.description}</p>`:''}\${feedbackBlock}</td>`;
+            row.innerHTML=`<td class="py-4 px-6 text-center font-bold text-slate-400 font-mono">${String(taskNum).padStart(2,'0')}</td>
+                <td class="py-4 px-6"><div class="font-bold text-slate-900">${task.name}</div>${task.description?`<p class="text-[11px] text-slate-400 mt-1">${task.description}</p>`:''}${feedbackBlock}</td>`;
 
             const dlCell=document.createElement('td'); dlCell.className="py-4 px-6 text-center";
-            dlCell.innerHTML=task.fileUrl?`<a href="\${task.fileUrl}" target="_blank" onclick="registerDownloadProgress('\${task.id}')" class="inline-flex px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 font-bold text-xs rounded-lg transition">\${task.btnText||"Get Form"}</a>`:`<span class="text-xs text-slate-400 italic">No Download</span>`;
+            dlCell.innerHTML=task.fileUrl?`<a href="${task.fileUrl}" target="_blank" onclick="registerDownloadProgress('${task.id}')" class="inline-flex px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 font-bold text-xs rounded-lg transition">${task.btnText||"Get Form"}</a>`:`<span class="text-xs text-slate-400 italic">No Download</span>`;
             row.appendChild(dlCell);
 
             const upCell=document.createElement('td'); upCell.className="py-4 px-6 text-center";
             if (task.noUpload) { upCell.innerHTML=isVerified?`<span class="text-emerald-600 font-bold text-xs">✓ Complete</span>`:`<span class="text-xs text-slate-400 italic">Info Only</span>`; }
-            else { upCell.innerHTML=isVerified?`<span class="text-slate-400 bg-slate-50 px-3 py-1 border border-slate-200 text-xs font-bold rounded-lg">Received</span>`:`<button onclick="triggerStudentFormSubmit('\${task.id}')" class="inline-flex px-3.5 py-1.5 border text-xs font-bold rounded-lg \${isWait?'bg-amber-50 text-amber-700 border-amber-200':'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent'} transition cursor-pointer">\${isWait?'Upload Again':'Submit File'}</button>`; }
+            else { upCell.innerHTML=isVerified?`<span class="text-slate-400 bg-slate-50 px-3 py-1 border border-slate-200 text-xs font-bold rounded-lg">Received</span>`:`<button onclick="triggerStudentFormSubmit('${task.id}')" class="inline-flex px-3.5 py-1.5 border text-xs font-bold rounded-lg ${isWait?'bg-amber-50 text-amber-700 border-amber-200':'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent'} transition cursor-pointer">${isWait?'Upload Again':'Submit File'}</button>`; }
             row.appendChild(upCell);
 
             const bCell=document.createElement('td'); bCell.className="py-4 px-6 text-center whitespace-nowrap";
@@ -327,8 +327,8 @@
         const tasks=assignmentsCatalog.filter(t=>t.type!=='header'&&itemApplies(t));
         const completed=tasks.filter(t=>database[activeStudent]?.[t.id]?.verified).length;
         const pct=tasks.length?Math.round((completed/tasks.length)*100):0;
-        const ct=document.getElementById('progressCountsText'); if(ct) ct.innerText=`\${completed} / \${tasks.length} Done`;
-        const pt=document.getElementById('progressBarPercentageText'); if(pt) pt.innerText=`\${pct}%`;
+        const ct=document.getElementById('progressCountsText'); if(ct) ct.innerText=`${completed} / ${tasks.length} Done`;
+        const pt=document.getElementById('progressBarPercentageText'); if(pt) pt.innerText=`${pct}%`;
         const bar=document.getElementById('progressBarRadial'); if(bar) bar.style.strokeDashoffset=175.92-(pct/100)*175.92;
     }
 
