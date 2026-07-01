@@ -292,7 +292,7 @@
             const row=document.createElement('tr'); row.className="border-b border-slate-100 text-left text-xs sm:text-sm";
             if (task.type==='header') {
                 row.className="bg-slate-50 border-y border-slate-200/60";
-                row.innerHTML=`<td colspan="5" class="py-3 px-6"><div class="font-extrabold text-slate-800 text-sm">${task.name}</div>${task.instructions?`<p class="text-xs text-slate-500 mt-0.5 font-semibold">${task.instructions}</p>`:''}</td>`;
+                row.innerHTML=`<td colspan="5" class="py-3 px-6"><div class="font-extrabold text-slate-800 text-sm">${task.name}</div>${task.instructions?'<p class="text-xs text-slate-500 mt-0.5 font-semibold">'+task.instructions+'</p>':''}</td>`;
                 tbody.appendChild(row); return;
             }
             taskNum++;
@@ -301,7 +301,7 @@
             const feedbackBlock=prog.feedbackNote?`<div class="mt-2 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-100 rounded-xl px-3 py-1.5 flex items-center gap-1.5">⚠️ Revision: "${prog.feedbackNote}"</div>`:"";
 
             row.innerHTML=`<td class="py-4 px-6 text-center font-bold text-slate-400 font-mono">${String(taskNum).padStart(2,'0')}</td>
-                <td class="py-4 px-6"><div class="font-bold text-slate-900">${task.name}</div>${task.description?`<p class="text-[11px] text-slate-400 mt-1">${task.description}</p>`:''}${feedbackBlock}</td>`;
+                <td class="py-4 px-6"><div class="font-bold text-slate-900">${task.name}</div>${task.description?'<p class="text-[11px] text-slate-400 mt-1">'+task.description+'</p>':''}${feedbackBlock}</td>`;
 
             const dlCell=document.createElement('td'); dlCell.className="py-4 px-6 text-center";
             dlCell.innerHTML=task.fileUrl?`<a href="${task.fileUrl}" target="_blank" onclick="registerDownloadProgress('${task.id}')" class="inline-flex px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 font-bold text-xs rounded-lg transition">${task.btnText||"Get Form"}</a>`:`<span class="text-xs text-slate-400 italic">No Download</span>`;
